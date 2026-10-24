@@ -150,6 +150,19 @@ if (-not $switch) {
     throw "Hyper-V switch '$switchName' does not exist. Create it or set switch_name."
 }
 
+# A ComputerName Windows rejects takes the whole specialize pass with it: the
+# answer file is abandoned, no account is created, bootstrap-winrm.ps1 never
+# runs, and the build dies hours later on a WinRM timeout with nothing to read.
+# computer_name falls back to vm_name, so a descriptive VM name lands here too.
+$computerName = Get-PackerVar 'computer_name'
+if (-not $computerName) { $computerName = Get-PackerVar 'vm_name' 'WINMIN' }
+if ($computerName.Length -gt 15 -or $computerName -notmatch '^[A-Za-z0-9-]+$' -or $computerName -match '^\d+$') {
+    throw ("'$computerName' is not a valid Windows hostname: 1-15 characters, " +
+        'letters, digits and hyphens only, and not all digits. It comes from ' +
+        'computer_name, which falls back to vm_name. Shorten vm_name, or set ' +
+        'computer_name separately to keep the longer VM name.')
+}
+
 $outputDirectory = Get-PackerVar 'output_directory' 'C:/HyperV/packer'
 if ($outputDirectory -match '^\\\\') {
     throw "output_directory must be a local path, Hyper-V cannot use UNC: $outputDirectory"

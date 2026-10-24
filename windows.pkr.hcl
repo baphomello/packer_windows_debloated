@@ -64,8 +64,12 @@ variable "vm_name" {
 }
 variable "computer_name" {
   type        = string
-  description = "Windows hostname. Empty uses vm_name. Randomized again on every clone when generalize is true"
+  description = "Windows hostname: 1-15 characters, letters, digits and hyphens. Empty uses vm_name, which then has to satisfy the same rule. Randomized again on every clone when generalize is true"
   default     = ""
+  validation {
+    condition     = var.computer_name == "" || (length(var.computer_name) <= 15 && can(regex("^[A-Za-z0-9-]*[A-Za-z-][A-Za-z0-9-]*$", var.computer_name)))
+    error_message = "The computer_name must be 1-15 characters of letters, digits and hyphens, and cannot be all digits."
+  }
 }
 variable "vm_cpus" {
   type        = string
@@ -106,6 +110,11 @@ variable "switch_name" {
   type        = string
   description = "Hyper-V virtual switch the build VM attaches to"
   default     = "Default Switch"
+}
+variable "winrm_timeout" {
+  type        = string
+  description = "How long to wait for the guest to come up before giving up. It covers the whole unattended install plus OOBE, so it is generous, but a broken answer file is only ever reported when it runs out"
+  default     = "2h"
 }
 variable "headless" {
   type        = bool
@@ -333,7 +342,7 @@ source "hyperv-iso" "windows" {
   winrm_port     = "5985"
   winrm_use_ssl  = false
   winrm_insecure = true
-  winrm_timeout  = "4h"
+  winrm_timeout  = var.winrm_timeout
 
   shutdown_command = local.shutdown_command
   shutdown_timeout = "30m"

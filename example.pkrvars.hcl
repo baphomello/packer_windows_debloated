@@ -61,6 +61,16 @@ ui_language   = "en-US"
 switch_name = "Default Switch"
 vm_name     = "WINMIN"
 
+// The Windows hostname, which falls back to vm_name when empty. Windows takes
+// 1-15 characters of letters, digits and hyphens, and an invalid one kills the
+// unattended install without saying so. Set it when vm_name is longer than that
+// or carries underscores.
+computer_name = ""
+
+// Covers the whole unattended install plus OOBE. Lower it and a broken answer
+// file is reported sooner; raise it on a slow host.
+winrm_timeout = "2h"
+
 // ---- build behaviour ---------------------------------------------------
 
 // false leaves a portable exported VM folder next to the build VM, which costs

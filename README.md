@@ -73,6 +73,10 @@ destroying an hour of work:
 | `r` | the cause was transient, or you fixed something from inside the guest |
 | `c` | you are done with this attempt |
 
+`winrm_timeout` (default `2h`) bounds the wait before the guest answers. It has
+to cover the unattended install and OOBE, so it is generous - but an answer file
+Windows refused is only ever reported when it runs out.
+
 `r` re-runs the whole failed step, so the provisioners are written to be safe to
 run twice: registry writes are idempotent, the payload copy is incremental, and
 the shutdown detects an image that is already generalized instead of running
@@ -176,6 +180,12 @@ notepad C:\Tools\config.json
 # or bake the difference at build time
 .\Build-Image.ps1 -Var vm_name=WIN2 -Var computer_name=WIN2
 ```
+
+`computer_name` falls back to `vm_name`, and Windows takes **1-15 characters of
+letters, digits and hyphens** for a hostname. A name it rejects abandons the
+whole answer file: no account is created, WinRM never opens, and the build sits
+on the connect timeout. `Build-Image.ps1` refuses such a name before it creates
+anything, so set `computer_name` separately when the VM deserves a longer name.
 
 Cloning the built VHDX:
 
