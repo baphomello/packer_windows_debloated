@@ -80,6 +80,30 @@ sysprep on it a second time. When sysprep does refuse, it prints its own
 `setuperr.log` into the build console, because the VM that holds it is about to
 be deleted.
 
+## The build does not flatter itself
+
+Every switch is checked against the finished image before the shutdown, so a
+variable that asked for something absent fails the build instead of shipping an
+image that quietly ignored it:
+
+```
+== Asserted: a variable asked for it, so it has to be here
+Defender policy          1
+Windows Update policy    1
+wuauserv start type      Disabled
+Firewall profiles        False
+VBS policy               0
+Auto-logon               1
+Pagefile entry           C:\pagefile.sys 4096 4096
+Payload directory        present
+Payload marker           present
+```
+
+Only deterministic artifacts are asserted: the registry value a script writes,
+never behaviour Windows may still refuse. What it can veto - Defender's
+real-time protection under tamper protection, the Edge uninstall outside some
+regions - is reported instead, because neither is a build error.
+
 ## The payload
 
 Anything that runs from a folder. It is copied in, not installed:
@@ -222,6 +246,7 @@ scripts/                     provisioners, in build order
   Set-Autologon.ps1            auto-logon, no lock, no screensaver, silent elevation
   Install-Runtimes.ps1         WebView2 and VC++, both opt-in
   Copy-Payload.ps1             finds the disc by label, copies, ACLs, shortcut
+  Test-ImageState.ps1          fails the build when a requested change is absent
   Cleanup-System.ps1           WinRE, component store, logs, temp, TRIM
   Optimize-Vhdx.ps1            host-side VHDX compaction (post-processor)
 tools/                       copied to C:\Tools in the image

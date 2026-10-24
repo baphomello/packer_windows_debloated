@@ -438,6 +438,28 @@ build {
     scripts = concat(["${path.root}/scripts/Copy-Payload.ps1"], [for s in var.extra_scripts : "${path.root}/${s}"])
   }
 
+  // Reads the image back and fails the build when a variable asked for something
+  // that is not there. Before the cleanup, so a build that got it wrong says so
+  // without first paying for the component store pass.
+  provisioner "powershell" {
+    elevated_user            = var.admin_username
+    elevated_password        = var.admin_password
+    elevated_execute_command = local.strict_powershell
+    environment_vars = [
+      "DisableDefender=${var.disable_defender}",
+      "DisableWindowsUpdate=${var.disable_windows_update}",
+      "DisableFirewall=${var.disable_firewall}",
+      "DisableVbs=${var.disable_vbs}",
+      "RemoveEdge=${var.remove_edge}",
+      "RemoveAppx=${var.remove_appx}",
+      "PagefileSizeMb=${var.pagefile_size_mb}",
+      "InstallPayload=${var.install_payload}",
+      "PayloadInstallDir=${local.payload_install_dir}",
+      "PayloadMarker=${var.payload_marker}"
+    ]
+    scripts = ["${path.root}/scripts/Test-ImageState.ps1"]
+  }
+
   // Panther is the one directory Cleanup-System.ps1 leaves alone, so what the
   // shutdown needs survives the last provisioner
   provisioner "file" {
