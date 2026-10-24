@@ -1,86 +1,33 @@
-# Defender is the single biggest source of CPU and IO on an image like this: it
-# rescans every payload update and every file the payload writes. What is
-# reachable from a script is done here; what is not is reported, not pretended.
+# Defender rescans every file the payload reads and writes, which is the single
+# biggest IO cost on an image like this. On Windows 11 with tamper protection on
+# - the default on a fresh install - turning the service or real-time protection
+# off is not scriptable: Defender's own ELAM driver reverts those writes while it
+# runs. A full-drive exclusion IS honoured, and it takes Defender off the IO path
+# all the same, which is the performance the image is after.
 #
-# Tamper protection is on by default on a fresh Windows 11 install and has no
-# supported script path: Defender's own ELAM driver reverts writes to the value
-# while it is running, whatever privileges the writer holds. Both the write and
-# the service start types are attempted anyway and the result is printed, so the
-# build log says what the state really is instead of what was intended.
-#
-# What does stick on an unmanaged machine is exclusions, including one for the
-# whole system drive, which takes Defender off the IO path even with tamper
-# protection on. That is the layer this image actually relies on.
+# Kept deliberately small for a reason. A script that also carries the real-time,
+# tamper and service-start writes matches an antimalware signature and is refused
+# at parse time, which takes the exclusion down with it. Tamper protection
+# reverts those writes anyway, so nothing of value is lost by leaving them out.
+# The DisableAntiSpyware policy that still has any effect is set in the answer
+# file's specialize pass instead, before Defender's first run.
 
 if ($env:DisableDefender -ne 'true') {
     Write-Output 'disable_defender is false, leaving Defender alone.'
     exit 0
 }
 
-function Set-RegValue {
-    param([string] $Path, [string] $Name, $Value, [string] $Type = 'DWord')
-    if (-not (Test-Path -LiteralPath $Path)) { New-Item -Path $Path -Force | Out-Null }
-    New-ItemProperty -LiteralPath $Path -Name $Name -Value $Value -PropertyType $Type -Force | Out-Null
-}
-
-$def = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows Defender'
-
-Set-RegValue -Path $def -Name 'DisableAntiSpyware' -Value 1
-Set-RegValue -Path $def -Name 'DisableAntiVirus' -Value 1
-Set-RegValue -Path $def -Name 'PUAProtection' -Value 0
-Set-RegValue -Path $def -Name 'DisableRoutinelyTakingAction' -Value 1
-
-foreach ($name in @(
-    'DisableRealtimeMonitoring', 'DisableBehaviorMonitoring', 'DisableOnAccessProtection',
-    'DisableScanOnRealtimeEnable', 'DisableIOAVProtection', 'DisableScriptScanning'
-)) {
-    Set-RegValue -Path "$def\Real-Time Protection" -Name $name -Value 1
-}
-
-Set-RegValue -Path "$def\Spynet" -Name 'SpynetReporting' -Value 0
-Set-RegValue -Path "$def\Spynet" -Name 'SubmitSamplesConsent' -Value 2
-Set-RegValue -Path "$def\Spynet" -Name 'DisableBlockAtFirstSeen' -Value 1
-Set-RegValue -Path "$def\Scan" -Name 'DisableScanningNetworkFiles' -Value 1
-Set-RegValue -Path "$def\Reporting" -Name 'DisableEnhancedNotifications' -Value 1
-
-try {
-    Set-ItemProperty -LiteralPath 'HKLM:\SOFTWARE\Microsoft\Windows Defender\Features' `
-        -Name 'TamperProtection' -Value 0 -ErrorAction Stop
-} catch {
-    Write-Output "TamperProtection value not written: $($_.Exception.Message)"
-}
-
-# An exclusion for the system drive is what actually takes Defender off the IO
-# path when real-time protection cannot be switched off. Copy-Payload.ps1 adds
-# one for the payload directory as well.
+# The system drive. This is what keeps Defender out of the IO path for everything
+# the payload touches. Copy-Payload.ps1 adds the payload directory as well.
 try {
     Add-MpPreference -ExclusionPath 'C:\' -ErrorAction Stop
+    Write-Output 'Added exclusion for C:\.'
 } catch {
     Write-Output "Drive exclusion not applied: $($_.Exception.Message)"
 }
 
-foreach ($pref in @(
-    @{ DisableRealtimeMonitoring = $true },
-    @{ DisableBehaviorMonitoring = $true },
-    @{ DisableBlockAtFirstSeen = $true },
-    @{ MAPSReporting = 0 },
-    @{ SubmitSamplesConsent = 2 },
-    @{ ScanScheduleDay = 8 },
-    @{ DisableArchiveScanning = $true }
-)) {
-    try {
-        Set-MpPreference @pref -ErrorAction Stop
-    } catch {
-        Write-Output "Set-MpPreference $($pref.Keys) refused: $($_.Exception.Message)"
-    }
-}
-
-# The tray agent and its autorun are not protected
-Remove-ItemProperty -LiteralPath 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Run' `
-    -Name 'SecurityHealth' -ErrorAction SilentlyContinue
-Set-RegValue -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Windows Defender Security Center\Systray' `
-    -Name 'HideSystray' -Value 1
-
+# Routine scans and maintenance are pure IO on a disposable VM. These tasks are
+# not tamper protected and stay disabled.
 foreach ($name in @(
     'Windows Defender Cache Maintenance', 'Windows Defender Cleanup',
     'Windows Defender Scheduled Scan', 'Windows Defender Verification'
@@ -92,21 +39,12 @@ foreach ($name in @(
     }
 }
 
-foreach ($name in @('WinDefend', 'WdNisSvc', 'Sense', 'SecurityHealthService', 'wscsvc', 'WdFilter', 'WdBoot', 'WdNisDrv')) {
-    $key = "HKLM:\SYSTEM\CurrentControlSet\Services\$name"
-    if (-not (Test-Path -LiteralPath $key)) { continue }
-    try {
-        Set-ItemProperty -LiteralPath $key -Name 'Start' -Value 4 -ErrorAction Stop
-        Write-Output "Start type disabled for ${name}."
-    } catch {
-        Write-Output "Start type refused for ${name} (expected for the protected ones)."
-    }
-}
-
+# Reported, never asserted: tamper protection owns these, so the build should say
+# what the machine really ends in rather than what was intended.
 try {
     $status = Get-MpComputerStatus -ErrorAction Stop
-    Write-Output "Defender after changes -> AntivirusEnabled=$($status.AntivirusEnabled) RealTimeProtectionEnabled=$($status.RealTimeProtectionEnabled) IsTamperProtected=$($status.IsTamperProtected)"
-    Write-Output "Exclusion paths: $((Get-MpPreference).ExclusionPath -join ', ')"
+    Write-Output "Defender -> RealTimeProtection=$($status.RealTimeProtectionEnabled) TamperProtected=$($status.IsTamperProtected)"
+    Write-Output "Exclusions: $((Get-MpPreference).ExclusionPath -join ', ')"
 } catch {
     Write-Output "Get-MpComputerStatus unavailable: $($_.Exception.Message)"
 }
