@@ -43,8 +43,11 @@ $mm = 'HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management'
 
 Write-Output '== Asserted: a variable asked for it, so it has to be here'
 
-Test-State -What 'Defender policy' -Requested ($env:DisableDefender -eq 'true') -Expected 1 -Actual {
-    Get-RegValue -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Windows Defender' -Name 'DisableAntiSpyware'
+# Not the DisableAntiSpyware policy: tamper protection strips that value back
+# out, which puts it in the reported half below. The drive exclusion is what
+# survives, so it is what proves the script ran at all.
+Test-State -What 'Defender exclusion' -Requested ($env:DisableDefender -eq 'true') -Expected 'present' -Actual {
+    if ((Get-MpPreference).ExclusionPath -contains 'C:\') { 'present' } else { 'absent' }
 }
 
 Test-State -What 'Windows Update policy' -Requested ($env:DisableWindowsUpdate -eq 'true') -Expected 1 -Actual {

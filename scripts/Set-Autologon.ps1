@@ -20,7 +20,11 @@ Set-RegValue -Path $winlogon -Name 'ForceAutoLogon' -Value '1' -Type String
 # the logon, so the value is removed instead of pinned to this hostname
 Remove-ItemProperty -LiteralPath $winlogon -Name 'DefaultDomainName' -ErrorAction SilentlyContinue
 
-Set-RegValue -Path $winlogon -Name 'AutoLogonCount' -Value 0
+# Winlogon decrements AutoLogonCount on every auto-logon and, on reaching zero,
+# deletes the count, deletes DefaultPassword and sets AutoAdminLogon to 0. An
+# unlimited auto-logon is the absence of this value, never a zero in it.
+Remove-ItemProperty -LiteralPath $winlogon -Name 'AutoLogonCount' -ErrorAction SilentlyContinue
+
 Set-RegValue -Path $winlogon -Name 'DisableLockWorkstation' -Value 1
 
 Set-RegValue -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\Personalization' -Name 'NoLockScreen' -Value 1
