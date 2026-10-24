@@ -1,0 +1,16 @@
+# Local environment: machine-specific paths, credentials, per-VM overrides
+local.pkrvars.hcl
+*.local.pkrvars.hcl
+
+# Build artifacts and caches
+builds/
+output-*/
+packer_cache/
+*.vhd
+*.vhdx
+
+# Images are large and belong outside the repo, see client_source_dir
+*.iso
+
+# Packer binary, if you keep it next to the template
+packer.exe

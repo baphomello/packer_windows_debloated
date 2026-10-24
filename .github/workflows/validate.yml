@@ -1,0 +1,32 @@
+name: validate
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  packer:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-packer@v3
+        with:
+          version: 1.11.2
+      - name: packer fmt
+        run: packer fmt -check -diff .
+      - name: packer validate
+        # Syntax only: a full validate needs the Hyper-V plugin, the Windows ISO
+        # and the client folder, none of which exist on a runner.
+        run: packer validate -syntax-only windows.pkr.hcl
+
+  powershell:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: PSScriptAnalyzer
+        shell: pwsh
+        run: |
+          Install-Module PSScriptAnalyzer -Scope CurrentUser -Force
+          $found = Invoke-ScriptAnalyzer -Path . -Recurse -Settings ./.psscriptanalyzer.psd1
+          $found | Format-Table -AutoSize
+          if ($found) { throw "$($found.Count) finding(s)" }
