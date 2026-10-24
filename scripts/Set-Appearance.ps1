@@ -43,6 +43,11 @@ Set-UserAppearance -Root 'HKU:\.DEFAULT'
 
 $defaultHive = 'C:\Users\Default\NTUSER.DAT'
 if (Test-Path -LiteralPath $defaultHive) {
+    # A run interrupted between load and unload leaves the hive mounted, and the
+    # next load then fails on a name that already exists. Retrying a provisioner
+    # has to start from the same place the first attempt did.
+    & reg.exe unload 'HKU\PackerDefault' 2>&1 | Out-Null
+
     & reg.exe load 'HKU\PackerDefault' $defaultHive | Out-Null
     if ($LASTEXITCODE -eq 0) {
         try {

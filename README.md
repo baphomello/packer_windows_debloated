@@ -77,12 +77,26 @@ destroying an hour of work:
 to cover the unattended install and OOBE, so it is generous - but an answer file
 Windows refused is only ever reported when it runs out.
 
-`r` re-runs the whole failed step, so the provisioners are written to be safe to
-run twice: registry writes are idempotent, the payload copy is incremental, and
-the shutdown detects an image that is already generalized instead of running
-sysprep on it a second time. When sysprep does refuse, it prints its own
-`setuperr.log` into the build console, because the VM that holds it is about to
-be deleted.
+### What a retry reaches
+
+`r` re-runs the **whole** failed step, and Packer re-uploads the provisioner
+scripts from disk every time. So a fix in a script lands on the next `r` without
+restarting the build:
+
+| Change | Picked up by `r` |
+| --- | --- |
+| A script under `scripts/`, `config/` or a profile | yes, it is re-uploaded |
+| `windows.pkr.hcl` or a variable file | no, variables are fixed when the build starts |
+| A transient failure: a download, a service slow to stop | yes |
+| A deterministic one: a script your antivirus blocks | no, it fails identically |
+
+Which is why every provisioner is written to survive a second pass: registry
+writes are idempotent, the payload copy is incremental, runtimes already present
+are skipped instead of downloaded again, a registry hive left mounted by an
+interrupted run is unloaded before it is loaded, and the shutdown detects an
+image that is already generalized instead of running sysprep on it twice. When
+sysprep does refuse, it prints its own `setuperr.log` into the build console,
+because the VM that holds it is about to be deleted.
 
 ## The build does not flatter itself
 
