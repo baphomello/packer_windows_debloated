@@ -94,9 +94,38 @@ Which is why every provisioner is written to survive a second pass: registry
 writes are idempotent, the payload copy is incremental, runtimes already present
 are skipped instead of downloaded again, a registry hive left mounted by an
 interrupted run is unloaded before it is loaded, and the shutdown detects an
-image that is already generalized instead of running sysprep on it twice. When
-sysprep does refuse, it prints its own `setuperr.log` into the build console,
-because the VM that holds it is about to be deleted.
+image that is already generalized instead of running sysprep on it twice.
+
+### "Timeout while waiting for machine to shut down"
+
+This almost always means sysprep refused to generalize, and it is the one
+failure the build cannot explain by itself. Packer's Hyper-V builder starts the
+shutdown command with its output pointed at buffers it never reads, so nothing
+sysprep says reaches the console - the step just waits out `shutdown_timeout`
+and reports a timeout.
+
+So answer **`a`**, which leaves the VM running, and read the reason from the
+host:
+
+```powershell
+.\tools\host\Get-SysprepFailure.ps1 -VMName your-vm-name
+```
+
+That goes in over PowerShell Direct, which needs no network and still works on a
+half-generalized guest. It prints `C:\sysprep-failed.log`, written by the
+shutdown script, falling back to sysprep's own `setuperr.log`.
+
+Answering `c` deletes the VM and the logs with it, leaving nothing to read.
+
+`Test-SysprepReady.ps1` runs just before the shutdown and lists what is likely
+to stop sysprep - chiefly appx packages installed for a user but not provisioned
+for all users, which is the `0x80073cf2` failure that follows removing apps. It
+reports and never removes, because the list is noisy and the wrong guess on the
+last step before shutdown costs the whole build.
+
+Setting `generalize = false` builds without sysprep entirely. Every clone then
+shares this image's SID and hostname, which is fine for one VM and not for
+several on one network.
 
 ## The build does not flatter itself
 
@@ -273,9 +302,12 @@ scripts/                     provisioners, in build order
   Copy-Payload.ps1             finds the disc by label, copies, ACLs, shortcut
   Test-ImageState.ps1          fails the build when a requested change is absent
   Cleanup-System.ps1           WinRE, component store, logs, temp, TRIM
+  Test-SysprepReady.ps1        lists what is likely to stop sysprep, before it runs
   Optimize-Vhdx.ps1            host-side VHDX compaction (post-processor)
-tools/                       copied to C:\Tools in the image
+tools/                       its *.ps1 are copied to C:\Tools in the image
   Get-ImageSummary.ps1         what the build actually produced
+  host/                        runs on the host, so it stays out of that copy
+    Get-SysprepFailure.ps1     reads a kept VM over PowerShell Direct
 profiles/
   README.md                    how to write one
   ragnarok-openkore/           worked example: payload + tools + networking

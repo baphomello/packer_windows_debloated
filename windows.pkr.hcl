@@ -423,7 +423,8 @@ build {
 
   // Operator tools stay in the image so a clone can be re-pointed without a rebuild
   provisioner "file" {
-    // Only *.ps1: a tools directory may also hold host-side helpers
+    // Only the *.ps1 directly inside: a tools directory may also hold host-side
+    // helpers, and those live in a subdirectory this pattern does not reach
     sources     = local.tools_files
     destination = "C:/Tools/"
   }
@@ -496,6 +497,16 @@ build {
     elevated_password        = var.admin_password
     elevated_execute_command = local.strict_powershell
     scripts                  = ["${path.root}/scripts/Cleanup-System.ps1"]
+  }
+
+  // Last thing before the shutdown that runs sysprep, and the last output the
+  // console will show: everything after this point is discarded by the builder.
+  provisioner "powershell" {
+    elevated_user            = var.admin_username
+    elevated_password        = var.admin_password
+    elevated_execute_command = local.strict_powershell
+    environment_vars         = ["Generalize=${var.generalize}"]
+    scripts                  = ["${path.root}/scripts/Test-SysprepReady.ps1"]
   }
 
   post-processor "shell-local" {
