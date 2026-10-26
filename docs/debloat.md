@@ -1,12 +1,12 @@
 # What the image removes, and what it deliberately keeps
 
-Every switch below is a Packer variable, all defaulting to `true`. Set one to
-`false` and that whole group is skipped.
+Every switch below is a Packer variable, and all but `defender_exclusions`
+default to `true`. Set one to `false` and that whole group is skipped.
 
 | Variable | Script | Effect |
 | --- | --- | --- |
 | `disable_windows_update` | `Disable-WindowsUpdate.ps1` | Policy, a WSUS server that does not exist, services, scheduled tasks, reserved storage |
-| `disable_defender` | `Disable-Defender.ps1` | System-drive exclusion, disabled scan tasks, honest reporting |
+| `defender_exclusions` | `Set-DefenderExclusions.ps1` | Directories Defender will not scan; empty by default |
 | `remove_appx` | `Remove-Bloat.ps1` | Preinstalled apps, capabilities, optional features |
 | `remove_edge` | `Remove-Bloat.ps1` | Edge uninstall attempt; WebView2 is always kept |
 | `disable_firewall` | `Set-Policies.ps1` | Filtering off on all three profiles |
@@ -32,28 +32,34 @@ either.
 
 On a fresh Windows 11, tamper protection is on and has **no supported script
 path**: Defender's own ELAM driver reverts any write that turns real-time
-protection or the service off, whatever privileges the writer holds. Worse, a
-script that *carries* those writes matches an antimalware signature and is
-refused at parse time (`ScriptContainedMaliciousContent`), which would take the
-rest of the script down with it.
+protection or the service off, whatever privileges the writer holds. A script
+that *carries* those writes is refused at parse time
+(`ScriptContainedMaliciousContent`), which takes the rest of the file down with
+it - and so is a script that asks to exclude a whole volume.
 
-So the script does not try. What is honoured on an unmanaged machine is a
-**system-drive exclusion**, which takes Defender off the IO path for everything
-the payload reads and writes - the actual performance win - and that is what the
-script does, plus disabling the routine scan tasks, which are not tamper
-protected. The real-time state is then printed rather than asserted:
+What is honoured is a **path exclusion**, scoped to the directories the payload
+actually uses. That is also the performance win worth having: on a VM built
+around one application, the scanned IO that matters is the tree that
+application reads and writes, not the whole disk. `Copy-Payload.ps1` excludes
+the payload directory on its own, and `defender_exclusions` takes any others.
+
+```hcl
+defender_exclusions = ["C:/Tools", "C:/Builds"]
+```
+
+The real-time state is printed rather than asserted:
 
 ```
-Defender -> RealTimeProtection=True TamperProtected=True
-Exclusions: C:\, C:\<payload>
+Defender effective       realtime=True tamperprotected=True
+Defender exclusions      C:\Landverse, C:\Tools
 ```
 
-Real-time protection reading `True` next to a `C:\` exclusion is the expected
-end state, not a failure: the engine is loaded but off the IO path. The one
-policy that still bites, `DisableAntiSpyware`, is set in the answer file's
-specialize pass, before Defender's first run. Physically removing Defender would
-mean offline surgery on `install.wim` before installing, which this project does
-not do.
+Real-time protection reading `True` next to those exclusions is the expected
+end state, not a failure: the engine is loaded but off the IO path for those
+trees. The one policy that still bites, `DisableAntiSpyware`, is set in the
+answer file's specialize pass, before Defender's first run. Physically removing
+Defender would mean offline surgery on `install.wim` before installing, which
+this project does not do.
 
 ## Kept on purpose
 

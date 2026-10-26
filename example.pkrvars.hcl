@@ -48,6 +48,14 @@ payload_shortcut = "MyApp.exe"
 install_webview2 = false
 install_vcredist = false
 
+// ---- Defender ----------------------------------------------------------
+
+// Directories Defender will not scan. The payload directory is excluded
+// automatically, so this is for anything else with hot IO - tools, caches,
+// a working directory. Use specific paths: a whole-volume exclusion is both
+// broader than needed and refused by Defender's own script scanner.
+defender_exclusions = []
+
 // ---- locale ------------------------------------------------------------
 
 // system_locale sets the ANSI codepage legacy applications read data in.

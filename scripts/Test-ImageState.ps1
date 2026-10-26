@@ -44,10 +44,13 @@ $mm = 'HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management'
 Write-Output '== Asserted: a variable asked for it, so it has to be here'
 
 # Not the DisableAntiSpyware policy: tamper protection strips that value back
-# out, which puts it in the reported half below. The drive exclusion is what
-# survives, so it is what proves the script ran at all.
-Test-State -What 'Defender exclusion' -Requested ($env:DisableDefender -eq 'true') -Expected 'present' -Actual {
-    if ((Get-MpPreference).ExclusionPath -contains 'C:\') { 'present' } else { 'absent' }
+# out, which puts it in the reported half below. Exclusions are what survives,
+# so they are what proves the script ran at all.
+$wantedExclusions = @($env:DefenderExclusions -split ';' | Where-Object { $_ })
+Test-State -What 'Defender exclusions' -Requested ($wantedExclusions.Count -gt 0) -Expected 'present' -Actual {
+    $have = @((Get-MpPreference).ExclusionPath)
+    $missing = @($wantedExclusions | Where-Object { $have -notcontains $_ })
+    if ($missing.Count -eq 0) { 'present' } else { "missing $($missing -join ', ')" }
 }
 
 Test-State -What 'Windows Update policy' -Requested ($env:DisableWindowsUpdate -eq 'true') -Expected 1 -Actual {

@@ -234,10 +234,10 @@ variable "pagefile_size_mb" {
 
 // ---------------------------------------------------------------- Debloat switches
 
-variable "disable_defender" {
-  type        = bool
-  description = "Apply the Defender policies and exclusions"
-  default     = true
+variable "defender_exclusions" {
+  type        = list(string)
+  description = "Directories Defender should not scan. The payload directory is added on its own."
+  default     = []
 }
 variable "disable_windows_update" {
   type        = bool
@@ -377,7 +377,7 @@ build {
       "DisableIpv6=${var.disable_ipv6}",
       "SettingsPageVisibility=${var.settings_page_visibility}",
       "DisableVbs=${var.disable_vbs}",
-      "DisableDefender=${var.disable_defender}",
+      "DefenderExclusions=${join(";", var.defender_exclusions)}",
       "DisableWindowsUpdate=${var.disable_windows_update}",
       "RemoveAppx=${var.remove_appx}",
       "RemoveEdge=${var.remove_edge}"
@@ -385,7 +385,7 @@ build {
     scripts = [
       "${path.root}/scripts/Set-Policies.ps1",
       "${path.root}/scripts/Disable-WindowsUpdate.ps1",
-      "${path.root}/scripts/Disable-Defender.ps1",
+      "${path.root}/scripts/Set-DefenderExclusions.ps1",
       "${path.root}/scripts/Disable-Services.ps1",
       "${path.root}/scripts/Remove-Bloat.ps1"
     ]
@@ -455,7 +455,7 @@ build {
     elevated_password        = var.admin_password
     elevated_execute_command = local.strict_powershell
     environment_vars = [
-      "DisableDefender=${var.disable_defender}",
+      "DefenderExclusions=${join(";", var.defender_exclusions)}",
       "DisableWindowsUpdate=${var.disable_windows_update}",
       "DisableFirewall=${var.disable_firewall}",
       "DisableVbs=${var.disable_vbs}",

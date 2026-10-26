@@ -171,13 +171,14 @@ disabled service count and the payload config.
 | Present | Absent |
 | --- | --- |
 | Windows 11 Pro, auto-logon, RDP | Edge, Store, OneDrive, Xbox, Widgets, Copilot/Recall |
-| Your payload and tools | Windows Update, Defender real-time, search indexing |
+| Your payload and tools | Windows Update, search indexing, Defender off your payload's IO path |
 | Only the runtimes you asked for | WinRE, hiberfil.sys, crash dumps, System Restore |
 | | Spooler, telemetry, 60+ services a single-purpose VM never uses |
 
-Each removal group is a switch (`disable_defender`, `disable_windows_update`,
-`disable_firewall`, `remove_edge`, `remove_appx`, `disable_vbs`, `disable_ipv6`,
-`dark_mode`, `settings_page_visibility`).
+Each removal group is a switch (`disable_windows_update`, `disable_firewall`,
+`remove_edge`, `remove_appx`, `disable_vbs`, `disable_ipv6`, `dark_mode`,
+`settings_page_visibility`), and `defender_exclusions` lists the directories
+Defender should leave alone.
 The tweak list was cross-checked against
 [winutil](https://github.com/ChrisTitusTech/winutil),
 [Win11Debloat](https://github.com/Raphire/Win11Debloat) and
@@ -263,7 +264,7 @@ config/
 scripts/                     provisioners, in build order
   Set-Policies.ps1             telemetry, cloud content, Copilot/Recall, Store, VBS, firewall
   Disable-WindowsUpdate.ps1    policy, dead update server, services, tasks, reserved storage
-  Disable-Defender.ps1         policies, exclusions, honest reporting
+  Set-DefenderExclusions.ps1   directories Defender will not scan
   Disable-Services.ps1         services and scheduled tasks
   Remove-Bloat.ps1             appx, capabilities, features, Edge, OneDrive
   Set-Performance.ps1          power, pagefile, prefetch, visual effects, dumps
