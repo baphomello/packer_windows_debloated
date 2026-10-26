@@ -406,9 +406,14 @@ build {
       "DarkMode=${var.dark_mode}",
       "PagefileSizeMb=${var.pagefile_size_mb}",
       "InstallWebView2=${var.install_webview2}",
-      "InstallVcRedist=${var.install_vcredist}"
+      "InstallVcRedist=${var.install_vcredist}",
+      "DisableWindowsUpdate=${var.disable_windows_update}"
     ]
     scripts = [
+      // Again, and deliberately. The first pass runs while first boot is still
+      // finishing, and the OOBE update tasks that cannot be disabled put
+      // wuauserv back on demand start behind it. By now they have run.
+      "${path.root}/scripts/Disable-WindowsUpdate.ps1",
       "${path.root}/scripts/Set-Performance.ps1",
       "${path.root}/scripts/Set-Appearance.ps1",
       "${path.root}/scripts/Set-Autologon.ps1",

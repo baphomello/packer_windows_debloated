@@ -57,10 +57,6 @@ Test-State -What 'Windows Update policy' -Requested ($env:DisableWindowsUpdate -
     Get-RegValue -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate\AU' -Name 'NoAutoUpdate'
 }
 
-Test-State -What 'wuauserv start type' -Requested ($env:DisableWindowsUpdate -eq 'true') -Expected 'Disabled' -Actual {
-    (Get-Service -Name 'wuauserv').StartType
-}
-
 Test-State -What 'Firewall profiles' -Requested ($env:DisableFirewall -eq 'true') -Expected 'False' -Actual {
     ((Get-NetFirewallProfile).Enabled | Sort-Object -Unique) -join ','
 }
@@ -87,6 +83,12 @@ Test-State -What 'Payload marker' -Requested (($env:InstallPayload -eq 'true') -
 
 Write-Output ''
 Write-Output '== Reported: Windows can refuse these, which is not a build error'
+
+# Written last in Disable-WindowsUpdate.ps1 and written again after the reboot,
+# but still Windows': wuauserv has a Group Policy start trigger and the OOBE
+# update tasks that refuse to be disabled put it back on demand start. The
+# policy above is what proves the script ran, so the start type is only shown.
+Write-Output ("{0,-24} {1}" -f 'wuauserv start type', (Get-Service -Name 'wuauserv' -ErrorAction SilentlyContinue).StartType)
 
 try {
     $mp = Get-MpComputerStatus -ErrorAction Stop

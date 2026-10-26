@@ -45,24 +45,6 @@ Set-RegValue -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\DriverSearching' -
 Set-RegValue -Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\DriverSearching' -Name 'SearchOrderConfig' -Value 0
 Set-RegValue -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\Device Metadata' -Name 'PreventDeviceMetadataFromNetwork' -Value 1
 
-$services = @('wuauserv', 'UsoSvc', 'WaaSMedicSvc', 'DoSvc', 'uhssvc', 'sedsvc', 'InstallService')
-foreach ($name in $services) {
-    if (Get-Service -Name $name -ErrorAction SilentlyContinue) {
-        Stop-Service -Name $name -Force -ErrorAction SilentlyContinue
-        Set-Service -Name $name -StartupType Disabled -ErrorAction SilentlyContinue
-    }
-    # The service keys resist Set-Service on some builds, and WaaSMedic flips
-    # wuauserv back on, so the start type is written directly as well
-    $key = "HKLM:\SYSTEM\CurrentControlSet\Services\$name"
-    if (Test-Path -LiteralPath $key) {
-        try {
-            Set-ItemProperty -LiteralPath $key -Name 'Start' -Value 4 -ErrorAction Stop
-        } catch {
-            Write-Output "Start type not written for ${name}: $($_.Exception.Message)"
-        }
-    }
-}
-
 foreach ($folder in @(
     '\Microsoft\Windows\UpdateOrchestrator\',
     '\Microsoft\Windows\WindowsUpdate\',
@@ -81,6 +63,27 @@ foreach ($folder in @(
 # Reserved storage holds back several GB for updates that will never arrive
 & dism.exe /Online /Set-ReservedStorageState /State:Disabled
 Write-Output "Reserved storage disable exit code: $LASTEXITCODE"
+
+# Last, because everything above disturbs them. wuauserv carries a Group Policy
+# start trigger, so writing the policy keys is itself a reason for the service
+# control manager to put it back on demand start; the OOBE update tasks that
+# refuse to be disabled do the same while first boot is still finishing. Written
+# here, after the writes that provoke it, the start type survives the script.
+$services = @('wuauserv', 'UsoSvc', 'WaaSMedicSvc', 'DoSvc', 'uhssvc', 'sedsvc', 'InstallService')
+foreach ($name in $services) {
+    if (Get-Service -Name $name -ErrorAction SilentlyContinue) {
+        Stop-Service -Name $name -Force -ErrorAction SilentlyContinue
+        Set-Service -Name $name -StartupType Disabled -ErrorAction SilentlyContinue
+    }
+    $key = "HKLM:\SYSTEM\CurrentControlSet\Services\$name"
+    if (Test-Path -LiteralPath $key) {
+        try {
+            Set-ItemProperty -LiteralPath $key -Name 'Start' -Value 4 -ErrorAction Stop
+        } catch {
+            Write-Output "Start type not written for ${name}: $($_.Exception.Message)"
+        }
+    }
+}
 
 Write-Output '--- update services after changes ---'
 foreach ($name in $services) {
