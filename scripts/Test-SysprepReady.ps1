@@ -20,6 +20,16 @@ foreach ($needed in @('C:\Windows\System32\Sysprep\sysprep.exe', 'C:\Windows\Pan
     }
 }
 
+# The refusal that actually cost a build: 24H2 encrypts the OS volume by
+# itself, and sysprep will not generalize one. Disable-DriveEncryption.ps1 runs
+# before this and should already have dealt with it.
+$blv = Get-BitLockerVolume -MountPoint $env:SystemDrive -ErrorAction SilentlyContinue
+if ($blv -and $blv.VolumeStatus -ne 'FullyDecrypted') {
+    Write-Output "BLOCKER: $($env:SystemDrive) is $($blv.VolumeStatus) - sysprep refuses an encrypted OS volume (0x80310039)"
+} else {
+    Write-Output "OS volume encryption: none"
+}
+
 # The generalize pass refuses a package that is installed for a user but not
 # provisioned for all users, and fails with 0x80073cf2. Removing appx packages
 # is exactly how an image ends up in that state, so the mismatch is listed.

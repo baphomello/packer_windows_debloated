@@ -511,7 +511,10 @@ build {
     elevated_password        = var.admin_password
     elevated_execute_command = local.strict_powershell
     environment_vars         = ["Generalize=${var.generalize}"]
-    scripts                  = ["${path.root}/scripts/Test-SysprepReady.ps1"]
+    scripts = [
+      "${path.root}/scripts/Disable-DriveEncryption.ps1",
+      "${path.root}/scripts/Test-SysprepReady.ps1"
+    ]
   }
 
   post-processor "shell-local" {

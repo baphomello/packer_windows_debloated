@@ -117,11 +117,24 @@ shutdown script, falling back to sysprep's own `setuperr.log`.
 
 Answering `c` deletes the VM and the logs with it, leaving nothing to read.
 
-`Test-SysprepReady.ps1` runs just before the shutdown and lists what is likely
-to stop sysprep - chiefly appx packages installed for a user but not provisioned
-for all users, which is the `0x80073cf2` failure that follows removing apps. It
-reports and never removes, because the list is noisy and the wrong guess on the
-last step before shutdown costs the whole build.
+The cause this build hit, and the one to suspect first, is drive encryption:
+
+```
+SYSPRP BitLocker-Sysprep: BitLocker is on for the OS volume. (0x80310039)
+```
+
+Windows 11 24H2 encrypts the OS volume by itself during OOBE of a clean
+install, and sysprep will not generalize an encrypted volume. The answer file
+now sets `PreventDeviceEncryption` before OOBE runs, and
+`Disable-DriveEncryption.ps1` decrypts the volume anyway if it finds it
+encrypted, so this should not recur - but it is worth recognising.
+
+`Test-SysprepReady.ps1` runs just before the shutdown and names what is likely
+to stop sysprep: an encrypted OS volume, and appx packages installed for a user
+but not provisioned for all users, which is the `0x80073cf2` failure that
+follows removing apps. The appx half reports and never removes, because the
+list is long, mostly inbox packages, and a wrong guess on the last step before
+shutdown costs the whole build.
 
 Setting `generalize = false` builds without sysprep entirely. Every clone then
 shares this image's SID and hostname, which is fine for one VM and not for
@@ -302,6 +315,7 @@ scripts/                     provisioners, in build order
   Copy-Payload.ps1             finds the disc by label, copies, ACLs, shortcut
   Test-ImageState.ps1          fails the build when a requested change is absent
   Cleanup-System.ps1           WinRE, component store, logs, temp, TRIM
+  Disable-DriveEncryption.ps1  sysprep refuses an encrypted OS volume
   Test-SysprepReady.ps1        lists what is likely to stop sysprep, before it runs
   Optimize-Vhdx.ps1            host-side VHDX compaction (post-processor)
 tools/                       its *.ps1 are copied to C:\Tools in the image
