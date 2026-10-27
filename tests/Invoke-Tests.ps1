@@ -377,6 +377,30 @@ if ('dest-slashes' -like $Filter) {
     Confirm-That 'the files are there' ((Get-FileCount (Join-Path $work 'out-slash')) -eq 1)
 }
 
+if ('overlay' -like $Filter) {
+    Start-Case 'order: a later copy onto the same dest overlays the earlier one'
+    $disc = New-Disc 'ovl'
+    New-Item -Path (Join-Path $disc 'Base\sub') -ItemType Directory -Force | Out-Null
+    'original' | Set-Content (Join-Path $disc 'Base\config.txt')
+    'original' | Set-Content (Join-Path $disc 'Base\keep.txt')
+    'original' | Set-Content (Join-Path $disc 'Base\sub\deep.txt')
+    New-Item -Path (Join-Path $disc 'Custom\sub') -ItemType Directory -Force | Out-Null
+    'custom' | Set-Content (Join-Path $disc 'Custom\config.txt')
+    'custom' | Set-Content (Join-Path $disc 'Custom\sub\deep.txt')
+    'added'  | Set-Content (Join-Path $disc 'Custom\extra.txt')
+    $dest = Join-Path $work 'out-overlay'
+
+    $r = Invoke-Install @(
+        (New-AppEntry @{ name = 'Base'; type = 'copy'; source = 'Base'; dest = $dest }),
+        (New-AppEntry @{ name = 'Customisation'; type = 'copy'; source = 'Custom'; dest = $dest; marker = 'extra.txt' })
+    ) $disc
+    Confirm-That 'exits zero' ($r.ExitCode -eq 0)
+    Confirm-That 'the later file wins' ((Get-Content (Join-Path $dest 'config.txt')).Trim() -eq 'custom')
+    Confirm-That 'it wins in subdirectories too' ((Get-Content (Join-Path $dest 'sub\deep.txt')).Trim() -eq 'custom')
+    Confirm-That 'what the overlay does not name survives' ((Get-Content (Join-Path $dest 'keep.txt')).Trim() -eq 'original')
+    Confirm-That 'the overlay can add files' (Test-Path (Join-Path $dest 'extra.txt'))
+}
+
 # ------------------------------------------------- Test-ImageState
 
 # It reads the same manifest back on the finished machine, so an app that was

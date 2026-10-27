@@ -77,6 +77,54 @@ catch a misspelled field name: HCL drops attributes the type does not declare,
 so `shortcutt = "x"` validates and then does nothing. Check the spelling against
 the table above.
 
+## Overlaying customisations on an app
+
+Apps install in order onto whatever is already there, so a second `copy` with
+the same `dest` is an overlay: it replaces the files it carries, adds the ones
+that are new, and leaves everything else alone.
+
+```hcl
+app_sources = ["C:/Gravity/Landverse", "C:/kore/custom"]
+
+apps = [
+  { name = "OpenKore", type = "git", url = "https://github.com/OpenKore/openkore.git",
+    dest = "C:/OpenKore" },
+  { name = "Kore config", type = "copy", source = "custom", dest = "C:/OpenKore",
+    marker = "control/config.txt" },
+]
+```
+
+Order matters twice over. `git clone` refuses a directory that already has
+files in it, so the clone goes first and the overlay second. And the `marker`
+on the overlay is what proves the customisation landed rather than the stock
+tree.
+
+### Cloning on the host is usually better
+
+A `git` app needs git installed in the image by an earlier entry, and it stays
+installed. The clone also depends on the remote being up at build time and
+pins nothing: a rebuild next month gets whatever the branch holds then.
+
+Cloning once on the machine running packer and listing that directory in
+`app_sources` avoids all three. The image keeps no git, the build touches no
+network, and the tree that goes in is the tree you looked at:
+
+```powershell
+git clone --depth 1 https://github.com/OpenKore/openkore.git C:\kore\openkore
+```
+
+```hcl
+app_sources = ["C:/Gravity/Landverse", "C:/kore/openkore", "C:/kore/custom"]
+
+apps = [
+  { name = "OpenKore",    type = "copy", source = "openkore", dest = "C:/OpenKore" },
+  { name = "Kore config", type = "copy", source = "custom",   dest = "C:/OpenKore",
+    marker = "control/config.txt" },
+]
+```
+
+Use the `git` type when you want the build to follow a branch on purpose.
+
 ## What unpacks without installing anything
 
 Windows ships `tar.exe`, which is bsdtar over libarchive. Measured on
