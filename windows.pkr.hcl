@@ -395,7 +395,19 @@ source "hyperv-iso" "windows" {
 build {
   sources = ["source.hyperv-iso.windows"]
 
-  // Policies first: they decide what the later removals have to fight with
+  // First, because everything after it reads and writes this volume. Windows 11
+  // 24H2 encrypts it during OOBE on its own, and until that is undone the
+  // debloat, the app copy and the component store pass all pay for the
+  // encryption on every block. Decrypting here is also decrypting the smallest
+  // the disk will ever be.
+  provisioner "powershell" {
+    elevated_user            = var.admin_username
+    elevated_password        = var.admin_password
+    elevated_execute_command = local.strict_powershell
+    scripts                  = ["${path.root}/scripts/Disable-DriveEncryption.ps1"]
+  }
+
+  // Policies next: they decide what the later removals have to fight with
   provisioner "powershell" {
     elevated_user            = var.admin_username
     elevated_password        = var.admin_password
@@ -537,10 +549,7 @@ build {
     elevated_password        = var.admin_password
     elevated_execute_command = local.strict_powershell
     environment_vars         = ["Generalize=${var.generalize}"]
-    scripts = [
-      "${path.root}/scripts/Disable-DriveEncryption.ps1",
-      "${path.root}/scripts/Test-SysprepReady.ps1"
-    ]
+    scripts                  = ["${path.root}/scripts/Test-SysprepReady.ps1"]
   }
 
   post-processor "shell-local" {

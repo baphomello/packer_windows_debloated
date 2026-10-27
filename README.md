@@ -158,8 +158,10 @@ SYSPRP BitLocker-Sysprep: BitLocker is on for the OS volume. (0x80310039)
 Windows 11 24H2 encrypts the OS volume by itself during OOBE of a clean
 install, and sysprep will not generalize an encrypted volume. The answer file
 now sets `PreventDeviceEncryption` before OOBE runs, and
-`Disable-DriveEncryption.ps1` decrypts the volume anyway if it finds it
-encrypted, so this should not recur - but it is worth recognising.
+`Disable-DriveEncryption.ps1` is the first provisioner to run, decrypting the
+volume anyway if it finds it encrypted. First, because everything after it
+reads and writes that volume: undoing the encryption early is both the smallest
+decryption and the fastest rest-of-build.
 
 `Test-SysprepReady.ps1` runs just before the shutdown and names what is likely
 to stop sysprep: an encrypted OS volume, and appx packages installed for a user

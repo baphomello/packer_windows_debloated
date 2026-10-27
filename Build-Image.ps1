@@ -197,6 +197,26 @@ if ($buildTempDir) {
     Write-Host "Build scratch: $buildTempDir" -ForegroundColor Cyan
 }
 
+# ISO9660 puts the primary volume descriptor at sector 16, and the volume
+# identifier 40 bytes into it. Reading it beats mounting the image, which would
+# need rights this script should not spend on a label check.
+function Get-IsoLabel {
+    param([string] $Path)
+    try {
+        $stream = [System.IO.File]::OpenRead($Path)
+    } catch {
+        return $null
+    }
+    try {
+        $null = $stream.Seek(32808, [System.IO.SeekOrigin]::Begin)
+        $buffer = New-Object byte[] 32
+        if ($stream.Read($buffer, 0, 32) -ne 32) { return $null }
+        return [System.Text.Encoding]::ASCII.GetString($buffer).Trim()
+    } finally {
+        $stream.Dispose()
+    }
+}
+
 # --- apps ISO -----------------------------------------------------------
 
 # Built whenever any app reads from the disc. An apps list that only installs
@@ -222,7 +242,18 @@ if ($appsSourceDir -and -not $SkipAppsIso) {
     $newest = ($appFiles | Sort-Object LastWriteTime -Descending | Select-Object -First 1).LastWriteTime
     $isoFile = Get-Item -LiteralPath $appsIso -ErrorAction SilentlyContinue
 
-    if (-not $isoFile -or $isoFile.LastWriteTime -lt $newest) {
+    # The guest finds the disc by label, so a cached ISO carrying the old one is
+    # a build that gets all the way to the apps step before failing to find it
+    $staleLabel = $false
+    if ($isoFile) {
+        $onDisc = Get-IsoLabel $isoFile.FullName
+        if ($onDisc -and $onDisc -ne $label) {
+            Write-Host ("Apps ISO is labelled '{0}' but apps_label is '{1}'; repacking." -f $onDisc, $label) -ForegroundColor Yellow
+            $staleLabel = $true
+        }
+    }
+
+    if (-not $isoFile -or $isoFile.LastWriteTime -lt $newest -or $staleLabel) {
         # oscdimg will not create the target directory for you
         $isoParent = Split-Path -LiteralPath $appsIso -Parent
         if ($isoParent -and -not (Test-Path -LiteralPath $isoParent)) {
