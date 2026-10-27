@@ -228,7 +228,11 @@ foreach ($app in $apps) {
     if (-not $name) { throw "Every app needs a 'name'." }
     if (-not $type) { throw "${name}: needs a 'type' (copy, archive, msi, exe or git)." }
 
-    $dest = Get-Field $app 'dest'
+    # HCL says C:/Dir because backslashes have to be escaped there, and that
+    # spelling reaches here intact. Most things take it, but a Defender
+    # exclusion is stored exactly as given and is the whole reason the
+    # directory is excluded at all, so it is normalised once, here.
+    $dest = (Get-Field $app 'dest') -replace '/', '\'
     Write-Output "$name ($type)"
 
     if ($type -eq 'git') {

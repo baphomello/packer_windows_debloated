@@ -9,7 +9,9 @@
 # scanner refuses a script that asks for one, which takes the rest of the file
 # down with it. Install-Apps.ps1 adds each app's directory on its own.
 
-$paths = @($env:DefenderExclusions -split ';' | Where-Object { $_ })
+# Stored exactly as given, so C:/Dir from the var file would be an exclusion
+# that never matches C:\Dir
+$paths = @($env:DefenderExclusions -split ';' | Where-Object { $_ } | ForEach-Object { $_ -replace '/', '\' })
 
 if ($paths.Count -eq 0) {
     Write-Output 'No Defender exclusions requested.'

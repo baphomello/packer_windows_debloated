@@ -363,6 +363,20 @@ if ('marker-relative-nodest' -like $Filter) {
     Confirm-That 'asks for the full path' ($r.Output -match 'full path')
 }
 
+if ('dest-slashes' -like $Filter) {
+    Start-Case 'dest: a forward-slash path from HCL is normalised before it is used'
+    $disc = New-Disc 'slash'
+    New-Item -Path (Join-Path $disc 'App') -ItemType Directory -Force | Out-Null
+    'x' | Set-Content (Join-Path $disc 'App\app.exe')
+    # What a var file actually contains, because HCL has to escape backslashes
+    $dest = ($work -replace '\\', '/') + '/out-slash'
+
+    $r = Invoke-Install @(New-AppEntry @{ name = 'Slashed'; type = 'copy'; source = 'App'; dest = $dest; marker = 'app.exe' }) $disc
+    Confirm-That 'exits zero' ($r.ExitCode -eq 0)
+    Confirm-That 'reports a backslash path' ($r.Output -match [regex]::Escape((Join-Path $work 'out-slash')))
+    Confirm-That 'the files are there' ((Get-FileCount (Join-Path $work 'out-slash')) -eq 1)
+}
+
 # ------------------------------------------------- Test-ImageState
 
 # It reads the same manifest back on the finished machine, so an app that was

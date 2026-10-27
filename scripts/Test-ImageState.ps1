@@ -46,7 +46,7 @@ Write-Output '== Asserted: a variable asked for it, so it has to be here'
 # Not the DisableAntiSpyware policy: tamper protection strips that value back
 # out, which puts it in the reported half below. Exclusions are what survives,
 # so they are what proves the script ran at all.
-$wantedExclusions = @($env:DefenderExclusions -split ';' | Where-Object { $_ })
+$wantedExclusions = @($env:DefenderExclusions -split ';' | Where-Object { $_ } | ForEach-Object { $_ -replace '/', '\' })
 Test-State -What 'Defender exclusions' -Requested ($wantedExclusions.Count -gt 0) -Expected 'present' -Actual {
     $have = @((Get-MpPreference).ExclusionPath)
     $missing = @($wantedExclusions | Where-Object { $have -notcontains $_ })
