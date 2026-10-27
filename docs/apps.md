@@ -47,7 +47,7 @@ subdirectory per app, and give each entry that subdirectory as its `source`.
 | `source` / `url` | one of them required | all except `git`, which takes `url` |
 | `dest` | required for `copy`, `archive`, `git` | |
 | `args` | `[]`, `/qn /norestart` for `msi` | `msi`, `exe`, `git` |
-| `marker` | none | a file under `dest` that must exist afterwards, or the build fails |
+| `marker` | none | proof the install landed, or the build fails. A name under `dest`, or a full path - which is what an `msi` or `exe` with no `dest` needs |
 | `shortcut` | none | an executable under `dest`, put on the public desktop |
 | `extractor` | none | `archive`: full path of a tool to unpack with instead of `tar.exe` |
 | `extractor_args` | `["x", "{src}", "-o{dest}", "-y"]` | `archive`: `{src}` and `{dest}` are substituted |

@@ -251,12 +251,19 @@ foreach ($app in $apps) {
         }
     }
 
+    # An installer has no dest, and what proves it worked is wherever it put
+    # itself, so a marker may be a full path as readily as a name under dest
     $marker = Get-Field $app 'marker'
     if ($marker) {
-        $base = $dest
-        if (-not $base) { $base = 'C:\' }
-        if (-not (Test-Path -LiteralPath (Join-Path $base $marker))) {
-            throw "${name}: '$marker' is missing from $base after the install, so something did not land."
+        if ([System.IO.Path]::IsPathRooted($marker)) {
+            $markerPath = $marker
+        } elseif ($dest) {
+            $markerPath = Join-Path $dest $marker
+        } else {
+            throw "${name}: marker '$marker' is relative but this app has no dest. Give the full path."
+        }
+        if (-not (Test-Path -LiteralPath $markerPath)) {
+            throw "${name}: '$markerPath' is not there after the install, so something did not land."
         }
     }
 

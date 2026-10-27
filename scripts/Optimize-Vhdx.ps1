@@ -4,9 +4,17 @@
 $ErrorActionPreference = 'Stop'
 
 $outputDirectory = $env:OutputDirectory
-$disks = Get-ChildItem -LiteralPath $outputDirectory -Filter '*.vhdx' -Recurse -File
 
-if (-not $disks) {
+# A post-processor failing fails the build, and by now the image exists and is
+# finished. Nothing in here is worth that, so every way out is a warning.
+if (-not (Get-Command 'Optimize-VHD' -ErrorAction SilentlyContinue)) {
+    Write-Warning 'No Hyper-V PowerShell module on this host; leaving the VHDX uncompacted.'
+    exit 0
+}
+
+$disks = @(Get-ChildItem -LiteralPath $outputDirectory -Filter '*.vhdx' -Recurse -File -ErrorAction SilentlyContinue)
+
+if ($disks.Count -eq 0) {
     Write-Warning "No VHDX found under $outputDirectory"
     exit 0
 }
@@ -23,7 +31,11 @@ foreach ($disk in $disks) {
         }
     } catch {
         Write-Warning "Full compaction failed for $($disk.Name): $($_.Exception.Message)"
-        Optimize-VHD -Path $disk.FullName -Mode Quick -ErrorAction SilentlyContinue
+        try {
+            Optimize-VHD -Path $disk.FullName -Mode Quick
+        } catch {
+            Write-Warning "Quick compaction also failed: $($_.Exception.Message)"
+        }
     }
 
     $after = (Get-Item -LiteralPath $disk.FullName).Length

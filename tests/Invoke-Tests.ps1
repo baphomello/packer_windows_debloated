@@ -339,6 +339,30 @@ if ('url-no-filename' -like $Filter) {
     Confirm-That 'nothing reaches the destination' (-not (Test-Path $dest))
 }
 
+if ('marker-absolute' -like $Filter) {
+    Start-Case 'marker: an installer proves itself with a full path'
+    $disc = New-Disc 'mabs'
+    '@exit /b 0' | Set-Content -LiteralPath (Join-Path $disc 'setup.cmd') -Encoding ASCII
+    $proof = Join-Path $work 'installed-here.txt'
+    'x' | Set-Content $proof
+
+    $r = Invoke-Install @(New-AppEntry @{ name = 'Setup'; type = 'exe'; source = 'setup.cmd'; marker = $proof }) $disc
+    Confirm-That 'exits zero when the full path is there' ($r.ExitCode -eq 0)
+
+    $r2 = Invoke-Install @(New-AppEntry @{ name = 'Setup'; type = 'exe'; source = 'setup.cmd'; marker = (Join-Path $work 'nowhere.txt') }) $disc
+    Confirm-That 'exits non-zero when it is not' ($r2.ExitCode -ne 0)
+}
+
+if ('marker-relative-nodest' -like $Filter) {
+    Start-Case 'marker: a relative one with no dest is refused, not guessed at'
+    $disc = New-Disc 'mrel'
+    '@exit /b 0' | Set-Content -LiteralPath (Join-Path $disc 'setup.cmd') -Encoding ASCII
+
+    $r = Invoke-Install @(New-AppEntry @{ name = 'Setup'; type = 'exe'; source = 'setup.cmd'; marker = 'somewhere.exe' }) $disc
+    Confirm-That 'exits non-zero' ($r.ExitCode -ne 0)
+    Confirm-That 'asks for the full path' ($r.Output -match 'full path')
+}
+
 # ------------------------------------------------- Test-ImageState
 
 # It reads the same manifest back on the finished machine, so an app that was

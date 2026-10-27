@@ -87,9 +87,11 @@ foreach ($app in $manifest) {
             if (Test-Path -LiteralPath $app.dest) { 'present' } else { 'absent' }
         }.GetNewClosure()
     }
-    if ($app.marker -and $app.dest) {
+    if ($app.marker) {
         Test-State -What "  marker $($app.marker)" -Requested $true -Expected 'present' -Actual {
-            if (Test-Path -LiteralPath (Join-Path $app.dest $app.marker)) { 'present' } else { 'absent' }
+            $path = $app.marker
+            if (-not [System.IO.Path]::IsPathRooted($path)) { $path = Join-Path $app.dest $app.marker }
+            if (Test-Path -LiteralPath $path) { 'present' } else { 'absent' }
         }.GetNewClosure()
     }
 }

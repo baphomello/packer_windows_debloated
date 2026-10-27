@@ -25,6 +25,12 @@ foreach ($path in $paths) {
     }
 }
 
-Write-Output "Exclusions now: $((Get-MpPreference).ExclusionPath -join ', ')"
+# Reading them back is a report, not the job, and a module that is not there
+# throws past -ErrorAction because the command never resolves at all
+try {
+    Write-Output "Exclusions now: $((Get-MpPreference).ExclusionPath -join ', ')"
+} catch {
+    Write-Output 'Exclusions could not be read back.'
+}
 
 exit 0
