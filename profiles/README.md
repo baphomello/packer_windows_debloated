@@ -35,8 +35,8 @@ script**. A tool reads its defaults from `config.json` and takes the same values
 as parameters:
 
 ```powershell
-param([string] $GameDir, [string] $ClientExe)
-$GameDir = Get-Setting -Name 'GameDir' -Value $GameDir -Fallback 'C:\App'
+param([string] $AppDir, [string] $ClientExe)
+$AppDir = Get-Setting -Name 'AppDir' -Value $AppDir -Fallback 'C:\App'
 ```
 
 Edit the JSON on a clone, or pass a flag. Neither is a rebuild.
@@ -44,15 +44,16 @@ Edit the JSON on a clone, or pass a flag. Neither is a rebuild.
 ## Variables a profile should not set
 
 Leave these to the person building: `iso_url`, `output_directory`,
-`build_temp_dir`, `admin_username`, `admin_password`, `payload_source_dir`,
-`switch_name`. They describe one machine, not one kind of image.
+`build_temp_dir`, `admin_username`, `admin_password`, `apps_source_dir`,
+`apps_iso`, `switch_name`. They describe one machine, not one kind of image.
 
 ## Writing one
 
 1. `mkdir profiles/<name>` and write `profile.pkrvars.hcl`.
-2. Put the payload checks in it: `payload_marker` fails the build early when the
-   wrong folder was packed, `payload_shortcut` lands on the public desktop.
-3. Turn on only the runtimes the payload really needs. Most applications that
+2. Put the `apps` list in it, with a `marker` on each entry so a wrong or
+   incomplete source fails the build, and a `shortcut` where one belongs on the
+   public desktop. See [docs/apps.md](../docs/apps.md).
+3. Turn on only the runtimes the apps really need. Most applications that
    predate the universal CRT carry their own.
 4. Put per-VM values in `tools_config` and read them in the tools, never in a
    provisioner.

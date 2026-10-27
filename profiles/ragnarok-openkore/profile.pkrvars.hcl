@@ -4,14 +4,25 @@
 //
 //   .\Build-Image.ps1 -VarFile profiles/ragnarok-openkore/profile.pkrvars.hcl,local.pkrvars.hcl
 //
-// Set payload_source_dir in your local file: it is the game folder on your host.
+// Set apps_source_dir in your local file: it is the client folder on your host.
 
 // A Ragnarok client is not installed, it is a folder that runs where you put
 // it. Whatever is in that folder travels with it: bridge DLLs, autologin.ini,
-// GordoKore.ini.
-install_payload  = true
-payload_marker   = "Ragexe.exe"   // keep in step with tools_config.ClientExe
-payload_shortcut = "Launcher.exe"
+// GordoKore.ini. So one app, of type copy.
+//
+// source = "." is the whole disc, which is what a disc packed from a single
+// folder looks like. Override this list in your own file to change dest, or to
+// install more alongside it.
+apps = [
+  {
+    name     = "Client"
+    type     = "copy"
+    source   = "."
+    dest     = "C:/Ragnarok"       // keep in step with tools_config.AppDir
+    marker   = "Ragexe.exe"        // keep in step with tools_config.ClientExe
+    shortcut = "Launcher.exe"
+  },
+]
 
 // The launcher is .NET Framework 4.8, which Windows already has, and hosts a
 // WebView2 control, which it does not. The client carries its own VC90, VC100,
@@ -40,7 +51,7 @@ tools_config = {
   ServerPrefix = "172.65."
   BasePort     = 2350
   Instances    = 3
-  GameDir      = "C:\\Ragnarok"
+  AppDir       = "C:\\Ragnarok"
   ClientExe    = "Ragexe.exe"
   LaunchToken  = "1rag1"
   Profiles     = []

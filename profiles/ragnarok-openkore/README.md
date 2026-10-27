@@ -15,13 +15,13 @@ profile_name = "ragnarok-openkore"
 
 `profile.pkrvars.hcl` carries everything specific to this use case. Your own
 file carries the machine specifics: the ISO, the output directory, the password
-and `payload_source_dir` pointing at the game folder.
+and `apps_source_dir` pointing at the client folder.
 
 What the profile adds on top of the base image:
 
 | Piece | What it does |
 | --- | --- |
-| `payload_marker = "Ragexe.exe"` | fails the build early if the wrong folder was packed |
+| `apps` with `marker = "Ragexe.exe"` | one `copy` app; the marker fails the build early if the wrong folder was packed |
 | `install_webview2 = true` | the launcher hosts a WebView2 control and Edge is uninstalled |
 | `tools/Set-KoreLink.ps1` | configures how this VM reaches the OpenKore listener |
 | `tools/Start-Clients.ps1` | launches N clients, one port per instance |
@@ -142,7 +142,7 @@ Nothing has to be rebuilt. On each VM, edit `C:\Tools\config.json`:
   "ServerPrefix": "172.65.",
   "BasePort": 2360,
   "Instances": 3,
-  "GameDir": "C:\\Landverse",
+  "AppDir": "C:\\Landverse",
   "ClientExe": "Ragexe.exe",
   "LaunchToken": "1rag1",
   "Profiles": ["alpha", "beta", "gamma"]
@@ -155,13 +155,13 @@ Every key is also a parameter on the tool that reads it, so one-off runs need no
 file edit:
 
 ```powershell
-Start-Clients.ps1 -GameDir C:\Client -ClientExe Ragexe.exe -Count 2
+Start-Clients.ps1 -AppDir C:\Client -ClientExe Ragexe.exe -Count 2
 Set-KoreLink.ps1 -Mode alias -KoreHost 172.65.10.1 -ServerPrefix ''
 ```
 
 | Key | Why it is a variable |
 | --- | --- |
-| `GameDir`, `ClientExe` | the client folder and executable differ per server |
+| `AppDir`, `ClientExe` | the client folder and executable differ per server |
 | `LaunchToken` | the first argument the client expects, server-specific |
 | `ServerPrefix` | the range the server accepts. Empty turns the warning off on a private server |
 | `BasePort`, `Instances` | one OpenKore port per client, see above |

@@ -71,8 +71,8 @@ $appx = @(
     'Microsoft.WindowsCalculator'
     'Microsoft.ApplicationCompatibilityEnhancements'
 
-    # Store codecs for Explorer and Photos, both of which are gone. A game
-    # client decodes its own audio and video, and WebView2 carries Chromium's
+    # Store codecs for Explorer and Photos, both of which are gone. A desktop
+    # application decodes its own audio and video, and WebView2 carries Chromium's
     # codecs rather than using these.
     'Microsoft.AV1VideoExtension'
     'Microsoft.AVCEncoderVideoExtension'

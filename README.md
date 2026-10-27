@@ -1,19 +1,19 @@
 # Minimal Windows VM for Hyper-V
 
-A Packer template that builds a **minimal Windows 11 image plus a payload folder
-of your choosing**. No browser, no Store, no indexing, no telemetry, no Windows
+A Packer template that builds a **minimal Windows 11 image plus the
+applications you list**. No browser, no Store, no indexing, no telemetry, no Windows
 Update, and no runtimes beyond what you ask for.
 
 It exists for the case where a VM has exactly one job: run one application,
 repeatably, on hardware you do not want to spend on Windows itself. Build once,
 clone the VHDX, point each clone at its own configuration.
 
-Nothing in the template knows what your payload is. A folder goes in, an image
-comes out, and everything specific to your application lives in a **profile** or
-in your own variable file - never in a script.
+Nothing in the template knows what your applications are. A list goes in, an
+image comes out, and everything specific to them lives in a **profile** or in
+your own variable file - never in a script.
 
 ```
-payload folder  -->  ISO  -->  second DVD  -->  C:\<payload>
+apps folder     -->  ISO  -->  second DVD  -->  copied, unpacked or installed
 Windows ISO     -->  unattended install  -->  debloat  -->  VHDX  -->  clone N times
 ```
 
@@ -29,7 +29,7 @@ one? See **[profiles/README.md](profiles/README.md)**.
 | `oscdimg.exe` in PATH (Windows ADK, Deployment Tools) | builds the unattend CD and the apps CD |
 | An elevated PowerShell | creating VMs, mounting and compacting VHDX |
 | A Windows ISO | `iso_url` |
-| Free space on the `output_directory` drive | about 20 GB plus the payload, doubled when exporting. `Build-Image.ps1` checks before it creates anything |
+| Free space on the `output_directory` drive | about 20 GB plus the apps ISO, doubled when exporting. `Build-Image.ps1` checks before it creates anything |
 
 The repo must sit on a drive letter. Hyper-V cannot reach `\\wsl.localhost\...`,
 so `output_directory` has to be a local Windows path.
@@ -38,7 +38,7 @@ so `output_directory` has to be a local Windows path.
 
 ```powershell
 Copy-Item example.pkrvars.hcl local.pkrvars.hcl
-notepad local.pkrvars.hcl          # ISO, payload folder, password
+notepad local.pkrvars.hcl          # ISO, apps folder, apps list, password
 .\Build-Image.ps1
 ```
 
@@ -52,7 +52,7 @@ been compacted. The final size is printed by the post-processor.
 | --- | --- | --- |
 | `output_directory` | `C:/HyperV/packer` | the build VM, its VHDX and the export |
 | `build_temp_dir` | user `TEMP` | the unattend ISO and the downloaded-ISO cache |
-| `payload_iso` | `<payload_source_dir>.iso` | the payload disc |
+| `apps_iso` | `<apps_source_dir>.iso` | the apps disc |
 
 All three are independent, so a cramped C: is one variable away from a roomier
 drive and back. `skip_export = true` halves the peak disk use by keeping only
@@ -91,7 +91,7 @@ restarting the build:
 | A deterministic one: a script your antivirus blocks | no, it fails identically |
 
 Which is why every provisioner is written to survive a second pass: registry
-writes are idempotent, the payload copy is incremental, runtimes already present
+writes are idempotent, an app that is already installed is skipped, runtimes already present
 are skipped instead of downloaded again, a registry hive left mounted by an
 interrupted run is unloaded before it is loaded, and the shutdown detects an
 image that is already generalized instead of running sysprep on it twice.
@@ -187,8 +187,8 @@ Firewall profiles        False
 VBS policy               0
 Auto-logon               1
 Pagefile entry           C:\pagefile.sys 4096 4096
-Payload directory        present
-Payload marker           present
+App Landverse            present
+  marker Ragexe.exe      present
 ```
 
 Only deterministic artifacts are asserted: the registry value a script writes,
@@ -196,29 +196,40 @@ never behaviour Windows may still refuse. What it can veto - Defender's
 real-time protection under tamper protection, the Edge uninstall outside some
 regions - is reported instead, because neither is a build error.
 
-## The payload
+## Apps
 
-Anything that runs from a folder. It is copied in, not installed:
-
-```
-payload_source_dir  --oscdimg-->  payload_iso  --second DVD-->  robocopy --> payload_install_dir
-```
-
-Nothing is served over HTTP or SMB and nothing is downloaded during the build.
-The ISO is a cache, rebuilt only when something in the folder is newer. The
-guest finds the disc by **volume label**, not drive letter.
-
-Moving the payload is **one variable**: `payload_iso` defaults to
-`<payload_source_dir>.iso` and `payload_install_dir` to `C:\<folder name>`.
+A list, installed in the order written. Copy a folder, unpack an archive, run
+an MSI or an EXE, clone a repository:
 
 ```hcl
-payload_source_dir = "D:/payloads/MyApp"   # -> D:/payloads/MyApp.iso -> C:\MyApp
-payload_marker     = "MyApp.exe"           # build fails early if this is missing
-payload_shortcut   = "MyApp.exe"           # goes on the public desktop
+apps = [
+  { name = "MyApp", type = "copy", source = "MyApp", dest = "C:/MyApp",
+    marker = "MyApp.exe", shortcut = "MyApp.exe" },
+  { name = "7-Zip", type = "msi", source = "7z2408-x64.msi" },
+]
 ```
 
-An installer-based application still works: make the payload the installer
-directory and add the silent install to `extra_scripts`.
+Sources ride in on a second DVD, built from one folder on the host:
+
+```
+apps_source_dir  --oscdimg-->  apps_iso  --second DVD-->  each app's dest
+```
+
+So a build whose apps all use `source` serves nothing over HTTP or SMB and
+downloads nothing. An app can use `url` instead, which gives that up
+deliberately. The ISO is a cache, rebuilt only when something in the folder is
+newer, and the guest finds the disc by **volume label**, not drive letter.
+
+`.zip`, `.7z`, `.tar.gz` and `.tar.xz` unpack with the `tar.exe` Windows already
+ships, so no extractor is installed for them. An **encrypted** archive stops the
+build and names what is missing, rather than picking an extractor for you - and
+`git` does the same, because a clean Windows image has none.
+
+Order is the only dependency mechanism: an app that needs a tool puts that tool
+above it.
+
+**[docs/apps.md](docs/apps.md)** has every field, the measured archive support
+matrix, and why the encrypted case fails instead of guessing.
 
 ## Extension points
 
@@ -227,7 +238,7 @@ Four variables, no forking required:
 | Variable | What it does |
 | --- | --- |
 | `profile_name` | the profile to layer in, so the build needs no arguments |
-| `extra_scripts` | PowerShell scripts run after the payload is copied |
+| `extra_scripts` | PowerShell scripts run after the apps are installed |
 | `tools_dirs` | directories whose `*.ps1` land in `C:\Tools` for operating the VM afterwards |
 | `tools_config` | a free-form object written to `C:\Tools\config.json` for those tools to read |
 
@@ -238,14 +249,14 @@ rebuilding for each VM.
 
 Every image also ships `C:\Tools\Get-ImageSummary.ps1`, which prints the state
 the build actually produced: Defender, Windows Update, firewall, VBS, pagefile,
-disabled service count and the payload config.
+disabled service count and the tools config.
 
 ## What the image does
 
 | Present | Absent |
 | --- | --- |
 | Windows 11 Pro, auto-logon, RDP | Edge, Store, OneDrive, Xbox, Widgets, Copilot/Recall |
-| Your payload and tools | Windows Update, search indexing, Defender off your payload's IO path |
+| Your apps and tools | Windows Update, search indexing, Defender off your apps' IO path |
 | Only the runtimes you asked for | WinRE, hiberfil.sys, crash dumps, System Restore |
 | | Spooler, telemetry, 60+ services a single-purpose VM never uses |
 
@@ -307,9 +318,9 @@ machine GUID from sysprep, and lands on the same auto-logon desktop.
 | No Windows Update provisioner | the image is rebuilt, not patched; an update reboot kills every session at once |
 | Fixed pagefile | a growing one fragments and inflates the dynamic VHDX |
 | `Win32PrioritySeparation = 24` | several equal workloads share the CPU evenly instead of boosting the foreground |
-| Payload copied, not installed | no installer logs, no drift between VMs |
-| Payload arrives as a second DVD | no HTTP, SMB or download during the build |
-| Auto-logon, no lock, no sleep | the payload runs in an interactive session that has to survive unattended |
+| A folder copied, not installed, when the app allows it | no installer logs, no drift between VMs |
+| App sources arrive as a second DVD | no HTTP, SMB or download during the build |
+| Auto-logon, no lock, no sleep | the apps run in an interactive session that has to survive unattended |
 
 ## Known limits
 
@@ -329,7 +340,7 @@ machine GUID from sysprep, and lands on the same auto-logon desktop.
 ```
 windows.pkr.hcl              one template, every variable has a default
 example.pkrvars.hcl          copy to local.pkrvars.hcl (gitignored)
-Build-Image.ps1              host checks, payload ISO, packer
+Build-Image.ps1              host checks, apps ISO, packer
 config/
   autounattend.pkrtpl.xml      unattended install, rendered by Packer
   sysprep-unattend.pkrtpl.xml  read by sysprep to restore auto-logon on a clone
@@ -344,7 +355,7 @@ scripts/                     provisioners, in build order
   Set-Performance.ps1          power, pagefile, prefetch, visual effects, dumps
   Set-Autologon.ps1            auto-logon, no lock, no screensaver, silent elevation
   Install-Runtimes.ps1         WebView2 and VC++, both opt-in
-  Copy-Payload.ps1             finds the disc by label, copies, ACLs, shortcut
+  Install-Apps.ps1             the apps list: copy, archive, msi, exe, git
   Test-ImageState.ps1          fails the build when a requested change is absent
   Cleanup-System.ps1           WinRE, component store, logs, temp, TRIM
   Disable-DriveEncryption.ps1  sysprep refuses an encrypted OS volume
@@ -356,8 +367,9 @@ tools/                       its *.ps1 are copied to C:\Tools in the image
     Get-SysprepFailure.ps1     reads a kept VM over PowerShell Direct
 profiles/
   README.md                    how to write one
-  ragnarok-openkore/           worked example: payload + tools + networking
+  ragnarok-openkore/           worked example: app + tools + networking
 docs/
+  apps.md                      the apps list: types, fields, archive support
   debloat.md                   what is removed, what is kept, and why
 ```
 

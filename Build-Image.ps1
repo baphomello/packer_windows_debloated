@@ -4,14 +4,14 @@
     Builds the image with Packer.
 
 .DESCRIPTION
-    Checks the host prerequisites, packs the payload folder into an ISO the
+    Checks the host prerequisites, packs the apps folder into an ISO the
     build VM mounts as a second DVD, then runs packer init, validate and build.
 
     The build writes to output_directory and scratches in build_temp_dir, both
     set in the variable file. Free space is checked on the first before anything
     is created, because a build that runs out of disk does so an hour in.
 
-    The payload ISO is a cache: it is rebuilt only when something in the payload
+    The apps ISO is a cache: it is rebuilt only when something in the source
     folder is newer.
 
 .PARAMETER ProfileName
@@ -41,7 +41,7 @@ param(
     [string[]] $VarFile = @('local.pkrvars.hcl'),
     [string[]] $Var = @(),
     [string] $PackerPath,
-    [switch] $SkipPayloadIso,
+    [switch] $SkipAppsIso,
     [switch] $SkipSpaceCheck,
     [switch] $ValidateOnly
 )
@@ -197,57 +197,54 @@ if ($buildTempDir) {
     Write-Host "Build scratch: $buildTempDir" -ForegroundColor Cyan
 }
 
-# --- payload ISO --------------------------------------------------------
+# --- apps ISO -----------------------------------------------------------
 
-$installPayload = (Get-PackerVar 'install_payload' 'true') -eq 'true'
+# Built whenever any app reads from the disc. An apps list that only installs
+# from urls needs no disc at all.
+$appsSourceDir = ConvertTo-WindowsPath (Get-PackerVar 'apps_source_dir')
 
-if ($installPayload -and -not $SkipPayloadIso) {
-    $sourceDir = ConvertTo-WindowsPath (Get-PackerVar 'payload_source_dir')
-    if (-not $sourceDir) {
-        throw 'payload_source_dir is not set and install_payload is true.'
+if ($appsSourceDir -and -not $SkipAppsIso) {
+    if (-not (Test-Path -LiteralPath $appsSourceDir)) {
+        throw "apps_source_dir is '$appsSourceDir', which does not exist."
     }
 
     # Mirrors the defaults in windows.pkr.hcl
-    $payloadIso = Get-PackerVar 'payload_iso'
-    if (-not $payloadIso) { $payloadIso = "$(Get-PackerVar 'payload_source_dir').iso" }
-    $payloadIso = ConvertTo-WindowsPath $payloadIso
-    $label = Get-PackerVar 'payload_label' 'PAYLOAD'
-    $marker = Get-PackerVar 'payload_marker'
+    $appsIso = Get-PackerVar 'apps_iso'
+    if (-not $appsIso) { $appsIso = "$(Get-PackerVar 'apps_source_dir').iso" }
+    $appsIso = ConvertTo-WindowsPath $appsIso
+    $label = Get-PackerVar 'apps_label' 'PAYLOAD'
 
-    $payloadFiles = @(Get-ChildItem -LiteralPath $sourceDir -File -Recurse -ErrorAction SilentlyContinue)
-    if ($payloadFiles.Count -eq 0) {
-        throw "No files in $sourceDir. Point payload_source_dir at the folder you want in the image."
-    }
-    if ($marker -and -not (Test-Path -LiteralPath (Join-Path $sourceDir $marker))) {
-        throw "payload_marker is '$marker' but $sourceDir does not contain it."
+    $appFiles = @(Get-ChildItem -LiteralPath $appsSourceDir -File -Recurse -ErrorAction SilentlyContinue)
+    if ($appFiles.Count -eq 0) {
+        throw "No files in $appsSourceDir. Point apps_source_dir at the folder the apps are packed from."
     }
 
-    $newest = ($payloadFiles | Sort-Object LastWriteTime -Descending | Select-Object -First 1).LastWriteTime
-    $isoFile = Get-Item -LiteralPath $payloadIso -ErrorAction SilentlyContinue
+    $newest = ($appFiles | Sort-Object LastWriteTime -Descending | Select-Object -First 1).LastWriteTime
+    $isoFile = Get-Item -LiteralPath $appsIso -ErrorAction SilentlyContinue
 
     if (-not $isoFile -or $isoFile.LastWriteTime -lt $newest) {
         # oscdimg will not create the target directory for you
-        $isoParent = Split-Path -LiteralPath $payloadIso -Parent
+        $isoParent = Split-Path -LiteralPath $appsIso -Parent
         if ($isoParent -and -not (Test-Path -LiteralPath $isoParent)) {
             New-Item -ItemType Directory -Path $isoParent -Force | Out-Null
         }
 
-        $size = ($payloadFiles | Measure-Object Length -Sum).Sum / 1GB
-        Write-Host ("Packing {0} ({1:N2} GB) into {2}" -f $sourceDir, $size, $payloadIso) -ForegroundColor Cyan
-        & oscdimg.exe -u2 -udfver102 "-l$label" $sourceDir $payloadIso
+        $size = ($appFiles | Measure-Object Length -Sum).Sum / 1GB
+        Write-Host ("Packing {0} ({1:N2} GB) into {2}" -f $appsSourceDir, $size, $appsIso) -ForegroundColor Cyan
+        & oscdimg.exe -u2 -udfver102 "-l$label" $appsSourceDir $appsIso
         if ($LASTEXITCODE -ne 0) {
             throw "oscdimg failed with exit code $LASTEXITCODE"
         }
-        $isoFile = Get-Item -LiteralPath $payloadIso
+        $isoFile = Get-Item -LiteralPath $appsIso
     }
 
-    Write-Host ("Payload ISO: {0} ({1:N2} GB, label {2})" -f $isoFile.FullName, ($isoFile.Length / 1GB), $label) -ForegroundColor Cyan
+    Write-Host ("Apps ISO: {0} ({1:N2} GB, label {2})" -f $isoFile.FullName, ($isoFile.Length / 1GB), $label) -ForegroundColor Cyan
 }
 
 # --- free space ---------------------------------------------------------
 
-# The VHDX grows to the installed image plus the payload, and an export is a
-# second full copy of it. Checked here, after the payload ISO exists, so its
+# The VHDX grows to the installed image plus the apps, and an export is a
+# second full copy of it. Checked here, after the apps ISO exists, so its
 # real size is known instead of guessed.
 if (-not $SkipSpaceCheck) {
     $outputRoot = [System.IO.Path]::GetPathRoot((ConvertTo-WindowsPath $outputDirectory))
@@ -255,12 +252,12 @@ if (-not $SkipSpaceCheck) {
     if (-not $disk) {
         Write-Warning "Could not read free space on $outputRoot, skipping the check."
     } else {
-        $payloadGb = 0
-        if ($installPayload) {
-            $iso = Get-Item -LiteralPath (ConvertTo-WindowsPath (Get-PackerVar 'payload_iso')) -ErrorAction SilentlyContinue
-            if ($iso) { $payloadGb = $iso.Length / 1GB }
+        $appsGb = 0
+        if ($appsSourceDir) {
+            $iso = Get-Item -LiteralPath (ConvertTo-WindowsPath (Get-PackerVar 'apps_iso')) -ErrorAction SilentlyContinue
+            if ($iso) { $appsGb = $iso.Length / 1GB }
         }
-        $neededGb = [math]::Round(20 + $payloadGb, 1)
+        $neededGb = [math]::Round(20 + $appsGb, 1)
         if ((Get-PackerVar 'skip_export' 'false') -ne 'true') { $neededGb = $neededGb * 2 }
         $freeGb = [math]::Round($disk.FreeSpace / 1GB, 1)
 

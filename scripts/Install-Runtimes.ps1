@@ -2,7 +2,7 @@
 # a minimal image stays minimal by default.
 #
 # WebView2 is the one worth knowing about. Remove-Bloat.ps1 uninstalls Edge, and
-# any payload that hosts a browser control - a .NET launcher, an Electron-style
+# any app that hosts a browser control - a .NET front end, an Electron-style
 # UI - needs that runtime present on its own.
 #
 # Many older applications carry their private VC runtimes next to their

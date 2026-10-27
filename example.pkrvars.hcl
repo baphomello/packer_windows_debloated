@@ -3,7 +3,7 @@
 // Only what has no sensible default is listed here. Everything else has one in
 // windows.pkr.hcl: run `packer inspect windows.pkr.hcl` to see them all.
 //
-// For a worked example of a payload that also needs tools and networking, see
+// For a worked example of an app that also needs tools and networking, see
 // profiles/README.md.
 
 // ---- required ----------------------------------------------------------
@@ -25,24 +25,55 @@ build_temp_dir = ""
 admin_username = "operator"
 admin_password = "change-me"
 
-// ---- payload -----------------------------------------------------------
+// ---- apps --------------------------------------------------------------
 
-// The folder copied into the image, as-is. This single variable moves the
-// whole payload: payload_iso defaults to "<payload_source_dir>.iso" and
-// payload_install_dir to "C:\<folder name>".
-install_payload    = true
-payload_source_dir = "D:/payloads/MyApp"
+// The folder packed into an ISO and attached to the build VM as a second DVD.
+// Every app with a "source" reads from that disc, so the build needs no
+// network. Leave empty if every app installs from a url.
+apps_source_dir = "D:/apps"
 
-// Optional: fail the build early if this file is missing, before and after the
-// copy. Cheap insurance against packing the wrong folder.
-payload_marker = "MyApp.exe"
+// Optional: where that ISO is written. Empty derives "<apps_source_dir>.iso".
+apps_iso = ""
 
-// Optional: put this on the public desktop, relative to the install directory.
-payload_shortcut = "MyApp.exe"
+// What to install, in order. The order is the only dependency mechanism:
+// an app that needs a tool puts that tool above it.
+//
+//   type = "copy"     a folder from the disc, copied as-is
+//   type = "archive"  zip, 7z, tar.gz, tar.xz - unpacked by the tar.exe
+//                     Windows already ships, so no extractor is installed
+//   type = "msi"      msiexec /i, args default to /qn /norestart
+//   type = "exe"      an installer run with args
+//   type = "git"      git clone, which needs git installed by an earlier app
+//
+// source is a path on the disc, "." meaning the whole disc. url is fetched
+// during the build instead. See docs/apps.md for every field.
+apps = [
+  {
+    name     = "MyApp"
+    type     = "copy"
+    source   = "MyApp"
+    dest     = "C:/MyApp"
+    marker   = "MyApp.exe" // fails the build if missing after the install
+    shortcut = "MyApp.exe" // onto the public desktop
+  },
+  // {
+  //   name = "7-Zip"
+  //   type = "msi"
+  //   source = "7z2408-x64.msi"
+  // },
+  // {
+  //   name      = "Secrets"
+  //   type      = "archive"
+  //   source    = "secrets.7z"
+  //   dest      = "C:/Program Files/Secrets"
+  //   extractor = "C:/Program Files/7-Zip/7z.exe"   // encrypted: tar.exe cannot
+  //   extractor_args = ["x", "{src}", "-o{dest}", "-pYOURPASSWORD", "-y"]
+  // },
+]
 
 // ---- runtimes ----------------------------------------------------------
 
-// Off by default: a minimal image stays minimal. Turn on what the payload
+// Off by default: a minimal image stays minimal. Turn on what the apps
 // actually needs. WebView2 matters for anything hosting a browser control,
 // because Edge is uninstalled.
 install_webview2 = false
@@ -50,7 +81,7 @@ install_vcredist = false
 
 // ---- Defender ----------------------------------------------------------
 
-// Directories Defender will not scan. The payload directory is excluded
+// Directories Defender will not scan. Every app with a dest is excluded
 // automatically, so this is for anything else with hot IO - tools, caches,
 // a working directory. Use specific paths: a whole-volume exclusion is both
 // broader than needed and refused by Defender's own script scanner.

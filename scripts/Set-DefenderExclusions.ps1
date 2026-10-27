@@ -1,5 +1,5 @@
 # Defender rescans every file an application reads and writes, which on a VM
-# built around a single payload is almost pure overhead. A path exclusion is
+# built around one or two of them is almost pure overhead. A path exclusion is
 # the supported way to take the scanner off that IO path, and it is the only
 # Defender setting worth writing from a build: tamper protection reverts the
 # real-time and service values, but it honours exclusions.
@@ -7,7 +7,7 @@
 # Scope these to the directories the payload actually uses. A whole-volume
 # exclusion is far broader than anything here needs, and Defender's own script
 # scanner refuses a script that asks for one, which takes the rest of the file
-# down with it. Copy-Payload.ps1 adds the payload directory on its own.
+# down with it. Install-Apps.ps1 adds each app's directory on its own.
 
 $paths = @($env:DefenderExclusions -split ';' | Where-Object { $_ })
 

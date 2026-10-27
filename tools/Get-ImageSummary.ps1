@@ -5,7 +5,7 @@
 .DESCRIPTION
     Reports the state the build left behind rather than the state it intended:
     Defender, Windows Update, the firewall, virtualization based security, the
-    disabled services and the payload. Run it on a fresh clone when something
+    disabled services and the installed apps. Run it on a fresh clone when something
     behaves differently from what the README claims.
 #>
 [CmdletBinding()]
@@ -52,7 +52,7 @@ $disk = Get-PSDrive C
 Write-Output "C: free / used          : $([math]::Round($disk.Free / 1GB, 1)) / $([math]::Round($disk.Used / 1GB, 1)) GB"
 Write-Output "Disabled services       : $((Get-Service | Where-Object StartType -eq 'Disabled').Count)"
 
-Write-Section 'Payload'
+Write-Section 'Apps'
 $config = Join-Path $PSScriptRoot 'config.json'
 if (Test-Path -LiteralPath $config) {
     Write-Output "C:\Tools\config.json    :"

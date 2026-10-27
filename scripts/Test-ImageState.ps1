@@ -73,12 +73,24 @@ Test-State -What 'Pagefile entry' -Requested ($pagefileMb -gt 0) -Expected "C:\p
     (Get-RegValue -Path $mm -Name 'PagingFiles') -join ';'
 }
 
-Test-State -What 'Payload directory' -Requested ($env:InstallPayload -eq 'true') -Expected 'present' -Actual {
-    if (Test-Path -LiteralPath $env:PayloadInstallDir) { 'present' } else { 'missing' }
+# Read back from the same manifest Install-Apps.ps1 worked from, so the build
+# ends by checking the machine rather than trusting the script that wrote it
+$manifestPath = 'C:\Windows\Temp\apps.json'
+$manifest = @()
+if (Test-Path -LiteralPath $manifestPath) {
+    $manifest = @((Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json) | ForEach-Object { $_ })
 }
-
-Test-State -What 'Payload marker' -Requested (($env:InstallPayload -eq 'true') -and [bool]$env:PayloadMarker) -Expected 'present' -Actual {
-    if (Test-Path -LiteralPath (Join-Path $env:PayloadInstallDir $env:PayloadMarker)) { 'present' } else { 'missing' }
+foreach ($app in $manifest) {
+    if ($app.dest) {
+        Test-State -What "App $($app.name)" -Requested $true -Expected 'present' -Actual {
+            if (Test-Path -LiteralPath $app.dest) { 'present' } else { 'absent' }
+        }.GetNewClosure()
+    }
+    if ($app.marker -and $app.dest) {
+        Test-State -What "  marker $($app.marker)" -Requested $true -Expected 'present' -Actual {
+            if (Test-Path -LiteralPath (Join-Path $app.dest $app.marker)) { 'present' } else { 'absent' }
+        }.GetNewClosure()
+    }
 }
 
 Write-Output ''

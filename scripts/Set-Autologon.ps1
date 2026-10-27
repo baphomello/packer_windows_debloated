@@ -1,4 +1,4 @@
-# The clients run inside an interactive desktop session, so that session has to
+# The apps run inside an interactive desktop session, so that session has to
 # come up by itself after every boot and never lock, time out or sleep.
 
 $user = $env:AdminUsername
@@ -48,7 +48,7 @@ Set-RegValue -Path $uac -Name 'EnableLUA' -Value 1
 Set-RegValue -Path $uac -Name 'ConsentPromptBehaviorAdmin' -Value 0
 Set-RegValue -Path $uac -Name 'PromptOnSecureDesktop' -Value 0
 
-# An expired password locks every client out of its session at once
+# An expired password locks every session out at once
 Set-LocalUser -Name $user -PasswordNeverExpires $true
 net accounts /maxpwage:unlimited | Out-Null
 

@@ -1,4 +1,4 @@
-// Minimal Windows image: a debloated Windows 11 plus a payload folder of your
+// Minimal Windows image: a debloated Windows 11 plus the apps you list, of your
 // choosing. See profiles/ for worked examples.
 //
 // Plugin:  https://github.com/hashicorp/packer-plugin-hyperv
@@ -158,42 +158,65 @@ variable "admin_password" {
   sensitive   = true
 }
 
-// ---------------------------------------------------------------- Payload
+// ------------------------------------------------------------------- Apps
 
-variable "install_payload" {
-  type        = bool
-  description = "Copy a folder into the image"
-  default     = true
-}
-variable "payload_source_dir" {
+variable "apps_source_dir" {
   type        = string
-  description = "Folder on the host, copied as-is into the image. Whatever is in it travels"
+  description = "Folder on the host packed into an ISO and attached as a second DVD. Every app with a \"source\" reads it from there, so nothing has to be downloaded during the build"
   default     = ""
 }
-variable "payload_iso" {
+variable "apps_iso" {
   type        = string
-  description = "ISO built from payload_source_dir and attached as a second DVD. Empty derives \"<payload_source_dir>.iso\""
+  description = "ISO built from apps_source_dir. Empty derives \"<apps_source_dir>.iso\""
   default     = ""
 }
-variable "payload_install_dir" {
+variable "apps_label" {
   type        = string
-  description = "Where the payload lands in the guest. Empty derives \"C:\\<folder name>\", so moving payload_source_dir is a one-variable change"
-  default     = ""
-}
-variable "payload_label" {
-  type        = string
-  description = "Volume label of the payload ISO. The guest finds the disc by this, not by drive letter"
+  description = "Volume label of the apps ISO. The guest finds the disc by this, not by drive letter. The value is arbitrary; changing it means repacking the ISO"
   default     = "PAYLOAD"
 }
-variable "payload_marker" {
-  type        = string
-  description = "File that must exist in the payload, checked on the disc and again after the copy. Empty skips the check"
-  default     = ""
-}
-variable "payload_shortcut" {
-  type        = string
-  description = "Executable inside the payload to put on the public desktop, relative to payload_install_dir. Empty creates no shortcut"
-  default     = ""
+variable "apps" {
+  // Installed in the order written. That order is the only dependency
+  // mechanism there is: an app that needs a tool puts that tool above it.
+  type = list(object({
+    name = string
+    // copy    a folder from the disc, as-is
+    // archive zip, 7z, tar.gz or tar.xz, unpacked by the tar.exe Windows ships
+    // msi     msiexec /i, args default to /qn /norestart
+    // exe     an installer run with args
+    // git     git clone, which needs git installed by an earlier app
+    type                  = string
+    source                = optional(string, "")
+    url                   = optional(string, "")
+    dest                  = optional(string, "")
+    args                  = optional(list(string), [])
+    marker                = optional(string, "")
+    shortcut              = optional(string, "")
+    extractor             = optional(string, "")
+    extractor_args        = optional(list(string), [])
+    success_exit_codes    = optional(list(number), [])
+    grant_users           = optional(bool, true)
+    exclude_from_defender = optional(bool, true)
+  }))
+  description = "What to install, in order. See docs/apps.md"
+  default     = []
+
+  validation {
+    condition     = alltrue([for a in var.apps : contains(["copy", "archive", "msi", "exe", "git"], a.type)])
+    error_message = "Each app's type must be one of: copy, archive, msi, exe, git."
+  }
+  validation {
+    condition     = alltrue([for a in var.apps : a.type == "git" || (a.source != "") != (a.url != "")])
+    error_message = "Each app needs exactly one of source (on the apps disc) or url. A git app uses url."
+  }
+  validation {
+    condition     = alltrue([for a in var.apps : contains(["msi", "exe"], a.type) || a.dest != ""])
+    error_message = "A copy, archive or git app needs dest: the directory it lands in."
+  }
+  validation {
+    condition     = alltrue([for a in var.apps : a.extractor != "" || length(a.extractor_args) == 0])
+    error_message = "An app that sets extractor_args must also set extractor, the full path of the tool to run."
+  }
 }
 
 // ---------------------------------------------------------------- Extensions
@@ -216,12 +239,12 @@ variable "tools_config" {
 }
 variable "extra_scripts" {
   type        = list(string)
-  description = "Additional provisioning scripts, relative to this template, run after the payload is copied"
+  description = "Additional provisioning scripts, relative to this template, run after the apps are installed"
   default     = []
 }
 variable "install_webview2" {
   type        = bool
-  description = "Install the WebView2 runtime. Needed by any payload hosting a browser control, since Edge is uninstalled"
+  description = "Install the WebView2 runtime. Needed by any app hosting a browser control, since Edge is uninstalled"
   default     = false
 }
 variable "install_vcredist" {
@@ -239,7 +262,7 @@ variable "pagefile_size_mb" {
 
 variable "defender_exclusions" {
   type        = list(string)
-  description = "Directories Defender should not scan. The payload directory is added on its own."
+  description = "Directories Defender should not scan. Each app with a dest is excluded on its own"
   default     = []
 }
 variable "disable_windows_update" {
@@ -254,7 +277,7 @@ variable "disable_firewall" {
 }
 variable "remove_edge" {
   type        = bool
-  description = "Attempt the Edge uninstall. WebView2 is always kept, the launcher needs it"
+  description = "Attempt the Edge uninstall. WebView2 is always kept, since an app may host a browser control"
   default     = true
 }
 variable "remove_appx" {
@@ -264,7 +287,7 @@ variable "remove_appx" {
 }
 variable "disable_ipv6" {
   type        = bool
-  description = "Disable every IPv6 interface except loopback. It is a network change: turn it off if anything in the payload resolves or binds over IPv6"
+  description = "Disable every IPv6 interface except loopback. It is a network change: turn it off if any app resolves or binds over IPv6"
   default     = true
 }
 variable "dark_mode" {
@@ -299,10 +322,12 @@ locals {
 
   computer_name = var.computer_name != "" ? var.computer_name : var.vm_name
 
-  // One variable moves the whole payload: the ISO and the install directory
-  // follow payload_source_dir unless they are set explicitly
-  payload_iso         = var.payload_iso != "" ? var.payload_iso : "${var.payload_source_dir}.iso"
-  payload_install_dir = var.payload_install_dir != "" ? var.payload_install_dir : (var.payload_source_dir != "" ? "C:\\${basename(var.payload_source_dir)}" : "C:\\Payload")
+  // One variable moves the whole disc: apps_iso follows apps_source_dir unless
+  // it is set explicitly
+  apps_iso = var.apps_iso != "" ? var.apps_iso : "${var.apps_source_dir}.iso"
+
+  // Only apps that read from the disc need it attached
+  needs_apps_disc = length([for a in var.apps : a if a.source != ""]) > 0
 
   tools_files = flatten([for dir in var.tools_dirs : [for f in fileset("${path.root}/${dir}", "*.ps1") : "${path.root}/${dir}/${f}"]])
 
@@ -335,9 +360,9 @@ source "hyperv-iso" "windows" {
   iso_url      = var.iso_url
   iso_checksum = var.iso_checksum
 
-  // The payload rides in as a second DVD. Nothing is served over the network
-  // during the build.
-  secondary_iso_images = var.install_payload ? [local.payload_iso] : []
+  // App sources ride in as a second DVD, so nothing has to be served over the
+  // network during the build.
+  secondary_iso_images = local.needs_apps_disc ? [local.apps_iso] : []
 
   communicator   = "winrm"
   winrm_username = var.admin_username
@@ -442,18 +467,19 @@ build {
     content     = jsonencode(var.tools_config)
   }
 
+  // The manifest travels as JSON rather than as environment variables: a list
+  // of objects has no honest flattening into NAME=value pairs.
+  provisioner "file" {
+    destination = "C:/Windows/Temp/apps.json"
+    content     = jsonencode(var.apps)
+  }
+
   provisioner "powershell" {
     elevated_user            = var.admin_username
     elevated_password        = var.admin_password
     elevated_execute_command = local.strict_powershell
-    environment_vars = [
-      "InstallPayload=${var.install_payload}",
-      "PayloadInstallDir=${local.payload_install_dir}",
-      "PayloadLabel=${var.payload_label}",
-      "PayloadMarker=${var.payload_marker}",
-      "PayloadShortcut=${var.payload_shortcut}"
-    ]
-    scripts = concat(["${path.root}/scripts/Copy-Payload.ps1"], [for s in var.extra_scripts : "${path.root}/${s}"])
+    environment_vars         = ["AppsLabel=${var.apps_label}"]
+    scripts                  = concat(["${path.root}/scripts/Install-Apps.ps1"], [for s in var.extra_scripts : "${path.root}/${s}"])
   }
 
   // Reads the image back and fails the build when a variable asked for something
@@ -470,10 +496,7 @@ build {
       "DisableVbs=${var.disable_vbs}",
       "RemoveEdge=${var.remove_edge}",
       "RemoveAppx=${var.remove_appx}",
-      "PagefileSizeMb=${var.pagefile_size_mb}",
-      "InstallPayload=${var.install_payload}",
-      "PayloadInstallDir=${local.payload_install_dir}",
-      "PayloadMarker=${var.payload_marker}"
+      "PagefileSizeMb=${var.pagefile_size_mb}"
     ]
     scripts = ["${path.root}/scripts/Test-ImageState.ps1"]
   }

@@ -37,11 +37,11 @@ that *carries* those writes is refused at parse time
 (`ScriptContainedMaliciousContent`), which takes the rest of the file down with
 it - and so is a script that asks to exclude a whole volume.
 
-What is honoured is a **path exclusion**, scoped to the directories the payload
-actually uses. That is also the performance win worth having: on a VM built
+What is honoured is a **path exclusion**, scoped to the directories the apps
+actually use. That is also the performance win worth having: on a VM built
 around one application, the scanned IO that matters is the tree that
-application reads and writes, not the whole disk. `Copy-Payload.ps1` excludes
-the payload directory on its own, and `defender_exclusions` takes any others.
+application reads and writes, not the whole disk. `Install-Apps.ps1` excludes
+each app's directory on its own, and `defender_exclusions` takes any others.
 
 ```hcl
 defender_exclusions = ["C:/Tools", "C:/Builds"]
@@ -88,9 +88,9 @@ that fails.
 Nothing is installed unless asked for: `install_webview2` and `install_vcredist`
 both default to `false`.
 
-Check what the payload actually needs before turning them on. Many older
+Check what the apps actually need before turning them on. Many older
 applications ship private copies of the VC runtimes next to their executable
-and need no redistributable at all: a game client from that era typically
+and need no redistributable at all: a desktop application from that era often
 carries VC90, VC100, VC110, VC140 and `D3DX9_42/43` in its own folder, and
 installing them again changes nothing. WebView2 is the one
 that usually does have to be installed, because Edge is uninstalled and any
@@ -113,7 +113,7 @@ What those projects do and this one adopted:
 | Input and speech personalization | implicit ink and text collection, trained data store, online speech, linguistic data |
 | Location | consent store set to Deny, sensor override, Maps auto-update |
 | Notifications | toasts and the notification center off: a toast over a full screen application steals focus |
-| Accessibility shortcuts | sticky, filter and toggle keys off - they fire on key sequences games send constantly and put a modal dialog over everything |
+| Accessibility shortcuts | sticky, filter and toggle keys off - they fire on key sequences an application can send and put a modal dialog over everything |
 | Background apps | `LetAppsRunInBackground`, `GlobalUserDisabled` |
 | Taskbar surfaces | task view, chat, search box, Start recommendations, `Start_TrackProgs` |
 | Storage Sense | off, so nothing is deleted on Windows' own schedule |
