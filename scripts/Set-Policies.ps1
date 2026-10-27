@@ -65,6 +65,13 @@ $policies = @(
     # OneDrive never gets a chance to start
     @{ Path = "$pol\Windows\OneDrive"; Name = 'DisableFileSyncNGSC'; Value = 1 }
 
+    # The Windows Security tray icon is one more notification surface on a VM
+    # nobody sits at, and this image already turns off toasts and the
+    # notification center. The policy hides the icon and nothing else:
+    # real-time scanning, tamper protection and the Settings page are left
+    # exactly as they are.
+    @{ Path = "$pol\Windows Defender Security Center\Systray"; Name = 'HideSystray'; Value = 1 }
+
     # Edge is uninstalled in Remove-Bloat.ps1; these keep its updater from bringing it back
     @{ Path = "$pol\EdgeUpdate"; Name = 'InstallDefault';                Value = 0 }
     @{ Path = "$pol\EdgeUpdate"; Name = 'UpdateDefault';                 Value = 0 }

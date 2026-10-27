@@ -113,6 +113,7 @@ What those projects do and this one adopted:
 | Input and speech personalization | implicit ink and text collection, trained data store, online speech, linguistic data |
 | Location | consent store set to Deny, sensor override, Maps auto-update |
 | Notifications | toasts and the notification center off: a toast over a full screen application steals focus |
+| Windows Security tray | the notification-area icon hidden; protection, tamper protection and the Settings page unchanged |
 | Accessibility shortcuts | sticky, filter and toggle keys off - they fire on key sequences an application can send and put a modal dialog over everything |
 | Background apps | `LetAppsRunInBackground`, `GlobalUserDisabled` |
 | Taskbar surfaces | task view, chat, search box, Start recommendations, `Start_TrackProgs` |
