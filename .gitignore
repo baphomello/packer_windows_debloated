@@ -14,3 +14,4 @@ packer_cache/
 
 # Packer binary, if you keep it next to the template
 packer.exe
+packer.exe.bak-*

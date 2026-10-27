@@ -88,6 +88,19 @@ if (-not (Get-Command $PackerPath -ErrorAction SilentlyContinue)) {
     throw "Packer not found. Install it, drop packer.exe next to this script, or pass -PackerPath."
 }
 
+# Checked before anything expensive: packing the apps ISO takes minutes, and
+# packer's own required_version only speaks up at validate, well after that.
+$minPacker = [version] '1.16.0'
+$versionLine = (& $PackerPath version) -join ' '
+if ($versionLine -match 'v?(\d+\.\d+\.\d+)') {
+    $found = [version] $Matches[1]
+    if ($found -lt $minPacker) {
+        throw "Packer $found is too old: this template needs $minPacker or newer, because optional() in an object type constraint is rejected by earlier releases. Download from https://developer.hashicorp.com/packer/install"
+    }
+} else {
+    Write-Host "Could not read the Packer version from '$versionLine'; continuing." -ForegroundColor Yellow
+}
+
 # Later files win, same as packer
 $vars = ($varFiles | ForEach-Object { Get-Content -LiteralPath $_ -Raw }) -join "`n"
 

@@ -25,8 +25,8 @@ one? See **[profiles/README.md](profiles/README.md)**.
 | Item | Why |
 | --- | --- |
 | Windows host with Hyper-V | the `hyperv-iso` builder |
-| Packer >= 1.11 | `required_version` |
-| `oscdimg.exe` in PATH (Windows ADK, Deployment Tools) | builds the unattend CD and the payload CD |
+| Packer >= 1.16.0 | the apps manifest is a typed list, and `optional()` inside an object type constraint is rejected by every earlier release |
+| `oscdimg.exe` in PATH (Windows ADK, Deployment Tools) | builds the unattend CD and the apps CD |
 | An elevated PowerShell | creating VMs, mounting and compacting VHDX |
 | A Windows ISO | `iso_url` |
 | Free space on the `output_directory` drive | about 20 GB plus the payload, doubled when exporting. `Build-Image.ps1` checks before it creates anything |

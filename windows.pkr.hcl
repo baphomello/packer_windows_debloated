@@ -4,7 +4,10 @@
 // Plugin:  https://github.com/hashicorp/packer-plugin-hyperv
 // oscdimg: ships with the Windows ADK (Deployment Tools), used for the CDs.
 packer {
-  required_version = ">= 1.11.0"
+  // 1.16.0 is the first release whose HCL2 accepts optional() inside an object
+  // type constraint, which is what lets the apps manifest be a typed list with
+  // defaults instead of a free-form blob validated in the guest.
+  required_version = ">= 1.16.0"
   required_plugins {
     hyperv = {
       source  = "github.com/hashicorp/hyperv"
