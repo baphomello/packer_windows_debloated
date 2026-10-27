@@ -13,6 +13,18 @@ packer {
       source  = "github.com/hashicorp/hyperv"
       version = "~> 1"
     }
+    qemu = {
+      source  = "github.com/hashicorp/qemu"
+      version = "~> 1"
+    }
+    virtualbox = {
+      source  = "github.com/hashicorp/virtualbox"
+      version = "~> 1"
+    }
+    vmware = {
+      source  = "github.com/hashicorp/vmware"
+      version = "~> 1"
+    }
   }
 }
 
@@ -75,39 +87,82 @@ variable "computer_name" {
   }
 }
 variable "vm_cpus" {
-  type        = string
+  type        = number
   description = "vCPUs during the build"
-  default     = "4"
+  default     = 4
 }
 variable "vm_memory" {
-  type        = string
+  type        = number
   description = "Startup memory in MB. Windows 11 setup refuses less than 4096"
-  default     = "4096"
+  default     = 4096
 }
 variable "vm_disk_size" {
-  type        = string
-  description = "Declared VHDX size in MB. Windows 11 setup refuses less than 65536; a dynamic VHDX only grows to what is used"
-  default     = "65536"
+  type        = number
+  description = "Declared disk size in MB. Windows 11 setup refuses less than 65536; a dynamic disk only grows to what is used"
+  default     = 65536
 }
 variable "dynamic_memory" {
   type        = bool
   description = "Let Hyper-V reclaim unused guest RAM"
   default     = true
 }
-variable "generation" {
-  type        = number
-  description = "Hyper-V VM generation. Windows 11 needs 2 (UEFI)"
-  default     = 2
+// ---- shared across targets ----------------------------------------------
+
+variable "boot_command" {
+  type        = list(string)
+  description = "UEFI firmware asks for a keypress to boot the installer, on every target tried so far"
+  default     = ["a<enter><wait>"]
 }
+variable "boot_wait" {
+  type        = string
+  description = "How long to wait before typing boot_command"
+  default     = "1s"
+}
+variable "shutdown_timeout" {
+  type        = string
+  description = "How long sysprep has to generalize and power the machine off"
+  default     = "30m"
+}
+
+// ---- qemu only -----------------------------------------------------------
+
+variable "qemu_format" {
+  type        = string
+  description = "qcow2 or raw"
+  default     = "qcow2"
+}
+variable "qemu_accelerator" {
+  type        = string
+  description = "kvm on Linux. Use tcg to build without hardware acceleration, which works anywhere and is far slower"
+  default     = "kvm"
+}
+variable "qemu_disk_interface" {
+  type        = string
+  description = "virtio is the fast path and needs driver_path set. sata boots with no extra driver at all"
+  default     = "virtio"
+}
+variable "qemu_net_device" {
+  type        = string
+  description = "virtio-net needs driver_path set. e1000 works with the driver Windows already carries"
+  default     = "virtio-net"
+}
+// Off by default since the answer file writes the LabConfig bypass keys, which
+// is what lets one image build on a hypervisor that cannot offer either.
+// Turning them on where they exist costs nothing and is closer to real hardware.
 variable "secure_boot" {
   type        = bool
-  description = "Secure Boot, required by the Windows 11 setup check"
-  default     = true
+  description = "Secure Boot, where the target supports it"
+  default     = false
 }
 variable "tpm" {
   type        = bool
-  description = "vTPM, required by the Windows 11 setup check"
-  default     = true
+  description = "A virtual TPM, where the target supports it"
+  default     = false
+}
+variable "driver_path" {
+  type        = string
+  description = "Directory of storage and network drivers for Windows setup to load, as the guest sees it. KVM with virtio disks needs this or setup finds no disk; the other targets do not"
+  default     = ""
 }
 variable "switch_name" {
   type        = string
@@ -335,49 +390,11 @@ locals {
   // sysprep refused, and a retried shutdown must not generalize twice.
   shutdown_command = "powershell -NoProfile -ExecutionPolicy Bypass -File C:\\Windows\\Panther\\Invoke-Shutdown.ps1"
 
-}
-
-source "hyperv-iso" "windows" {
-  // Gen 2 UEFI boots from the ISO and still asks for a keypress
-  boot_command = ["a<enter><wait>"]
-  boot_wait    = "1s"
-
-  vm_name                          = var.vm_name
-  cpus                             = var.vm_cpus
-  memory                           = var.vm_memory
-  enable_dynamic_memory            = var.dynamic_memory
-  disk_size                        = var.vm_disk_size
-  generation                       = var.generation
-  enable_secure_boot               = var.secure_boot
-  enable_tpm                       = var.tpm
-  enable_virtualization_extensions = false
-  guest_additions_mode             = "disable"
-  switch_name                      = var.switch_name
-  headless                         = var.headless
-  skip_export                      = var.skip_export
-  output_directory                 = "${var.output_directory}/${var.vm_name}"
-
-  iso_url      = var.iso_url
-  iso_checksum = var.iso_checksum
-
-  // App sources ride in as a second DVD, so nothing has to be served over the
-  // network during the build.
-  secondary_iso_images = local.needs_apps_disc ? [local.apps_iso] : []
-
-  communicator   = "winrm"
-  winrm_username = var.admin_username
-  winrm_password = var.admin_password
-  winrm_port     = "5985"
-  winrm_use_ssl  = false
-  winrm_insecure = true
-  winrm_timeout  = var.winrm_timeout
-
-  shutdown_command = local.shutdown_command
-  shutdown_timeout = "30m"
-
-  cd_label = "unattend"
-  cd_content = {
+  // The install media every target boots from. Held here so the sources differ
+  // only where the hypervisors actually differ.
+  unattend_content = {
     "autounattend.xml" = templatefile("${path.root}/config/autounattend.pkrtpl.xml", {
+      driver_path   = var.driver_path
       image_name    = var.windows_image_name
       product_key   = var.windows_product_key
       computer_name = local.computer_name
@@ -392,8 +409,182 @@ source "hyperv-iso" "windows" {
   }
 }
 
+source "hyperv-iso" "windows" {
+  boot_command = var.boot_command
+  boot_wait    = var.boot_wait
+
+  vm_name                          = var.vm_name
+  cpus                             = var.vm_cpus
+  memory                           = var.vm_memory
+  enable_dynamic_memory            = var.dynamic_memory
+  disk_size                        = var.vm_disk_size
+  generation                       = 2
+  enable_secure_boot               = var.secure_boot
+  enable_tpm                       = var.tpm
+  enable_virtualization_extensions = false
+  guest_additions_mode             = "disable"
+  switch_name                      = var.switch_name
+  headless                         = var.headless
+  skip_export                      = var.skip_export
+  output_directory                 = "${var.output_directory}/${var.vm_name}"
+
+  iso_url      = var.iso_url
+  iso_checksum = var.iso_checksum
+
+  // App sources ride in as a second DVD, so nothing has to be served over the
+  // network during the build. Each target spells this its own way.
+  secondary_iso_images = local.needs_apps_disc ? [local.apps_iso] : []
+
+  communicator   = "winrm"
+  winrm_username = var.admin_username
+  winrm_password = var.admin_password
+  winrm_port     = "5985"
+  winrm_use_ssl  = false
+  winrm_insecure = true
+  winrm_timeout  = var.winrm_timeout
+
+  shutdown_command = local.shutdown_command
+  shutdown_timeout = var.shutdown_timeout
+
+  cd_label   = "unattend"
+  cd_content = local.unattend_content
+}
+
+// KVM on a Linux host. virtio is the fast path and the reason driver_path
+// exists: Windows setup carries no virtio driver and would find no disk.
+source "qemu" "windows" {
+  boot_command = var.boot_command
+  boot_wait    = var.boot_wait
+
+  vm_name          = "${var.vm_name}.${var.qemu_format}"
+  output_directory = "${var.output_directory}/${var.vm_name}"
+  format           = var.qemu_format
+  accelerator      = var.qemu_accelerator
+  machine_type     = "q35"
+  efi_boot         = true
+  vtpm             = var.tpm
+  cpus             = var.vm_cpus
+  memory           = var.vm_memory
+  disk_size        = "${var.vm_disk_size}M"
+  disk_interface   = var.qemu_disk_interface
+  net_device       = var.qemu_net_device
+  headless         = var.headless
+
+  iso_url      = var.iso_url
+  iso_checksum = var.iso_checksum
+
+  // No secondary_iso_images here, so the disc goes on the command line
+  qemuargs = local.needs_apps_disc ? [["-drive", "file=${local.apps_iso},media=cdrom,index=3"]] : []
+
+  communicator   = "winrm"
+  winrm_username = var.admin_username
+  winrm_password = var.admin_password
+  winrm_port     = 5985
+  winrm_use_ssl  = false
+  winrm_insecure = true
+  winrm_timeout  = var.winrm_timeout
+
+  shutdown_command = local.shutdown_command
+  shutdown_timeout = var.shutdown_timeout
+
+  cd_label   = "unattend"
+  cd_content = local.unattend_content
+}
+
+// Runs on Windows, Linux and macOS, which makes it the portable answer when
+// the host hypervisor is not the point.
+source "virtualbox-iso" "windows" {
+  boot_command = var.boot_command
+  boot_wait    = var.boot_wait
+
+  vm_name              = var.vm_name
+  output_directory     = "${var.output_directory}/${var.vm_name}"
+  guest_os_type        = "Windows11_64"
+  firmware             = "efi"
+  cpus                 = var.vm_cpus
+  memory               = var.vm_memory
+  disk_size            = var.vm_disk_size
+  iso_interface        = "sata"
+  headless             = var.headless
+  guest_additions_mode = "disable"
+
+  iso_url      = var.iso_url
+  iso_checksum = var.iso_checksum
+
+  // Port 2 on the controller the plugin creates for the install media
+  vboxmanage = local.needs_apps_disc ? [
+    ["storageattach", "{{ .Name }}", "--storagectl", "SATA Controller",
+    "--port", "2", "--device", "0", "--type", "dvddrive", "--medium", local.apps_iso]
+  ] : []
+
+  communicator   = "winrm"
+  winrm_username = var.admin_username
+  winrm_password = var.admin_password
+  winrm_port     = 5985
+  winrm_use_ssl  = false
+  winrm_insecure = true
+  winrm_timeout  = var.winrm_timeout
+
+  shutdown_command = local.shutdown_command
+  shutdown_timeout = var.shutdown_timeout
+
+  cd_label   = "unattend"
+  cd_content = local.unattend_content
+}
+
+// Workstation, Fusion and ESXi.
+source "vmware-iso" "windows" {
+  boot_command = var.boot_command
+  boot_wait    = var.boot_wait
+
+  vm_name          = var.vm_name
+  output_directory = "${var.output_directory}/${var.vm_name}"
+  guest_os_type    = "windows11-64"
+  version          = 21
+  // vmxnet3 needs VMware Tools, which this image does not install
+  network_adapter_type = "e1000e"
+  disk_adapter_type    = "lsisas1068"
+  cpus                 = var.vm_cpus
+  memory               = var.vm_memory
+  disk_size            = var.vm_disk_size
+  headless             = var.headless
+
+  iso_url      = var.iso_url
+  iso_checksum = var.iso_checksum
+
+  vmx_data = merge(
+    { "firmware" = "efi" },
+    local.needs_apps_disc ? {
+      "sata0:1.present"    = "TRUE"
+      "sata0:1.deviceType" = "cdrom-image"
+      "sata0:1.fileName"   = local.apps_iso
+    } : {}
+  )
+
+  communicator   = "winrm"
+  winrm_username = var.admin_username
+  winrm_password = var.admin_password
+  winrm_port     = 5985
+  winrm_use_ssl  = false
+  winrm_insecure = true
+  winrm_timeout  = var.winrm_timeout
+
+  shutdown_command = local.shutdown_command
+  shutdown_timeout = var.shutdown_timeout
+
+  cd_label   = "unattend"
+  cd_content = local.unattend_content
+}
+
 build {
-  sources = ["source.hyperv-iso.windows"]
+  // One set of provisioners, every target. Pick one with -only:
+  //   packer build -only=qemu.windows .
+  sources = [
+    "source.hyperv-iso.windows",
+    "source.qemu.windows",
+    "source.virtualbox-iso.windows",
+    "source.vmware-iso.windows",
+  ]
 
   // First, because everything after it reads and writes this volume. Windows 11
   // 24H2 encrypts it during OOBE on its own, and until that is undone the
@@ -552,7 +743,10 @@ build {
     scripts                  = ["${path.root}/scripts/Test-SysprepReady.ps1"]
   }
 
+  // Hyper-V only: the other targets either compact on their own or produce a
+  // format Optimize-VHD cannot open
   post-processor "shell-local" {
+    only = ["hyperv-iso.windows"]
     environment_vars = [
       "OutputDirectory=${var.output_directory}/${var.vm_name}",
       "VmName=${var.vm_name}"

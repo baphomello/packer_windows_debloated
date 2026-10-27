@@ -1,4 +1,4 @@
-# Minimal Windows VM for Hyper-V
+# Minimal Windows VM
 
 A Packer template that builds a **minimal Windows 11 image plus the
 applications you list**. No browser, no Store, no indexing, no telemetry, no Windows
@@ -24,15 +24,15 @@ one? See **[profiles/README.md](profiles/README.md)**.
 
 | Item | Why |
 | --- | --- |
-| Windows host with Hyper-V | the `hyperv-iso` builder |
+| One hypervisor, any of four | Hyper-V, KVM/qemu, VirtualBox or VMware. See [targets](#targets) |
 | Packer >= 1.16.0 | the apps manifest is a typed list, and `optional()` inside an object type constraint is rejected by every earlier release |
 | `oscdimg.exe` in PATH (Windows ADK, Deployment Tools) | builds the unattend CD and the apps CD |
 | An elevated PowerShell | creating VMs, mounting and compacting VHDX |
 | A Windows ISO | `iso_url` |
 | Free space on the `output_directory` drive | about 20 GB plus the apps ISO, doubled when exporting. `Build-Image.ps1` checks before it creates anything |
 
-The repo must sit on a drive letter. Hyper-V cannot reach `\\wsl.localhost\...`,
-so `output_directory` has to be a local Windows path.
+On Windows, the repo must sit on a drive letter: Hyper-V cannot reach
+`\\wsl.localhost\...`, so `output_directory` has to be a local path.
 
 ## Quick start
 
@@ -57,6 +57,62 @@ been compacted. The final size is printed by the post-processor.
 All three are independent, so a cramped C: is one variable away from a roomier
 drive and back. `skip_export = true` halves the peak disk use by keeping only
 the build VM folder.
+
+## Targets
+
+One template, one set of provisioning scripts, four hypervisors. The scripts
+never learn which one they are running on:
+
+| Target | `-only=` | Produces |
+| --- | --- | --- |
+| Hyper-V | `hyperv-iso.windows` | a VM folder with a VHDX |
+| KVM / qemu | `qemu.windows` | `qcow2`, or `raw` via `qemu_format` |
+| VirtualBox | `virtualbox-iso.windows` | an OVA |
+| VMware | `vmware-iso.windows` | a VMX folder |
+
+```powershell
+packer build -only=qemu.windows -var-file=local.pkrvars.hcl windows.pkr.hcl
+```
+
+`Build-Image.ps1` takes `-Target` for the same choice, and defaults to Hyper-V.
+Without one of them a build would try all four at once.
+
+### What made this portable
+
+Windows 11 setup checks for TPM 2.0 and Secure Boot, and whether a hypervisor
+can offer them varies: Hyper-V Gen 2 has both, VirtualBox before 7.0 has no
+vTPM, qemu needs `swtpm` installed separately. The answer file now writes the
+`LabConfig` bypass keys during `windowsPE`, so the same media installs
+everywhere. `secure_boot` and `tpm` default to `false` and can be turned back
+on wherever the target supports them - the image no longer depends on it.
+
+### virtio, on KVM only
+
+Windows setup carries no virtio driver, so with `qemu_disk_interface = "virtio"`
+it finds no disk at all and stops. Two ways out:
+
+```hcl
+# point setup at the virtio-win drivers, mounted as a third disc
+driver_path = "E:\amd64\w11"
+
+# or give up the fast path and need no driver
+qemu_disk_interface = "sata"
+qemu_net_device     = "e1000"
+```
+
+`driver_path` is empty by default and the block disappears from the answer
+file, so the other three targets never see it.
+
+### Where the host still shows through
+
+Everything in `scripts/` runs in the guest and is portable. Three things are
+not, and all three are Hyper-V or Windows:
+
+| | |
+| --- | --- |
+| `Build-Image.ps1` | packs the apps ISO with `oscdimg`, checks free space. `packer build` works without it |
+| `Optimize-Vhdx.ps1` | compacts a VHDX; the post-processor is scoped to the Hyper-V target |
+| `tools/host/Get-SysprepFailure.ps1` | PowerShell Direct, which only Hyper-V has |
 
 ## When a step fails
 
@@ -328,8 +384,8 @@ machine GUID from sysprep, and lands on the same auto-logon desktop.
 
 | Limit | Status |
 | --- | --- |
-| Hyper-V only | the template has one source. A `vmware-iso` or `qemu` source would be a welcome addition |
-| No GPU, no sound card | Hyper-V gives the guest neither. 3D applications fall back to software rendering (d3d9on12/WARP) |
+| Only Hyper-V is build-tested | the other three sources validate and are written from each builder's documented options, but no image has been built with them yet |
+| No GPU, no sound card | none of these targets give the guest either by default. 3D applications fall back to software rendering (d3d9on12/WARP) |
 | RDP disconnect | the session stays logged on, but the desktop stops composing and a D3D application can stall. Drive it through VMConnect, or hand the session back with `tscon 1 /dest:console` |
 | Defender tamper protection | not scriptable, see [docs/debloat.md](docs/debloat.md). The build log prints the state it really ends in |
 | `sysprep /generalize` | can fail if an appx is left half-removed. The shutdown prints sysprep's own log when it does; set `generalize = false` to build without it and accept identical SIDs across clones |

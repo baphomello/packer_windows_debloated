@@ -95,10 +95,28 @@ system_locale = "en-US"
 input_locale  = "en-US"
 ui_language   = "en-US"
 
-// ---- Hyper-V -----------------------------------------------------------
+// ---- the VM ------------------------------------------------------------
 
+vm_name = "WINMIN"
+
+// Hyper-V only, ignored by the other targets.
 switch_name = "Default Switch"
-vm_name     = "WINMIN"
+
+// Windows 11 setup checks for both, and the answer file writes the LabConfig
+// bypass so it installs without them. Turn them on where the target has them.
+secure_boot = false
+tpm         = false
+
+// ---- KVM / qemu only ----------------------------------------------------
+
+// virtio is the fast path, and Windows setup carries no driver for it: leave
+// these as they are and set driver_path, or drop to sata/e1000 and need none.
+// qemu_disk_interface = "virtio"
+// qemu_net_device     = "virtio-net"
+// driver_path         = "E:\\amd64\\w11"
+
+// kvm on Linux. tcg builds anywhere and is far slower.
+// qemu_accelerator = "kvm"
 
 // The Windows hostname, which falls back to vm_name when empty. Windows takes
 // 1-15 characters of letters, digits and hyphens, and an invalid one kills the

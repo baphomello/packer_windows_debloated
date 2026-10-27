@@ -41,6 +41,8 @@ param(
     [string[]] $VarFile = @('local.pkrvars.hcl'),
     [string[]] $Var = @(),
     [string] $PackerPath,
+    [ValidateSet('hyperv-iso.windows', 'qemu.windows', 'virtualbox-iso.windows', 'vmware-iso.windows')]
+    [string] $Target = 'hyperv-iso.windows',
     [switch] $SkipAppsIso,
     [switch] $SkipSpaceCheck,
     [switch] $ValidateOnly
@@ -301,7 +303,10 @@ if (-not $SkipSpaceCheck) {
 
 # --- build --------------------------------------------------------------
 
-$packerArgs = @($varFiles | ForEach-Object { "-var-file=$_" })
+# The template carries one source per hypervisor and they all share the
+# provisioners, so a build without -only would try every one of them
+$packerArgs = @("-only=$Target")
+$packerArgs += @($varFiles | ForEach-Object { "-var-file=$_" })
 foreach ($v in $Var) { $packerArgs += @('-var', $v) }
 
 & $PackerPath init windows.pkr.hcl
