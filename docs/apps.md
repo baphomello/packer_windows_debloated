@@ -68,6 +68,8 @@ per-hypervisor way of attaching a second disc.
 | `extractor` | none | `archive`: full path of a tool to unpack with instead of `tar.exe` |
 | `extractor_args` | `["x", "{src}", "-o{dest}", "-y"]` | `archive`: `{src}` and `{dest}` are substituted |
 | `success_exit_codes` | `[0, 1638, 3010]` | `exe` |
+| `uninstall` | none | a program and its arguments, run after every app is in. For a tool the build needed and the image should not keep |
+| `remove_paths` | `[]` | paths deleted after every app is in |
 | `grant_users` | `true` | gives Users modify on `dest` |
 | `exclude_from_defender` | `true` | adds `dest` as a Defender exclusion |
 
@@ -99,6 +101,51 @@ files in it, so the clone goes first and the overlay second. And the `marker`
 on the overlay is what proves the customisation landed rather than the stock
 tree.
 
+### Keeping the tool out of the image
+
+Git has to be installed to clone, and a minimal image should not keep it
+afterwards. `uninstall` says so: it runs once every app is in, in reverse
+order, so a tool is undone after the thing that needed it.
+
+```hcl
+app_sources = ["C:/Gravity/Landverse", "C:/kore/custom"]
+
+apps = [
+  { name = "Landverse", type = "copy", source = "Landverse", dest = "C:/Landverse",
+    marker = "Ragexe.exe", shortcut = "Launcher.exe" },
+
+  { name = "Git", type = "exe", source = "Landverse/Git-2.47.0-64-bit.exe",
+    args      = ["/VERYSILENT", "/NORESTART"],
+    uninstall = ["C:/Program Files/Git/unins000.exe", "/VERYSILENT", "/NORESTART"] },
+
+  { name = "OpenKore", type = "git", url = "https://github.com/OpenKore/openkore.git",
+    dest = "C:/OpenKore",
+    remove_paths = ["C:/OpenKore/.git"] },
+
+  { name = "Kore config", type = "copy", source = "custom", dest = "C:/OpenKore",
+    marker = "control/config.txt" },
+]
+```
+
+Your machine ends up with neither git nor OpenKore on it; the VM has OpenKore
+and no git. `remove_paths` takes the clone's history with it, which on a
+`--depth 1` clone of OpenKore is still tens of megabytes of nothing the image
+will ever read.
+
+Cleanup **reports and never fails the build**, because an uninstaller that
+exits zero having done nothing is the case worth catching, and its exit code
+cannot say so. `Test-ImageState.ps1` asks the finished machine instead, and
+fails there:
+
+```
+App OpenKore              present
+  removed C:/OpenKore/.git  gone
+  removed C:/Program Files/Git/unins000.exe  still there  EXPECTED gone
+```
+
+Cleanup runs inside `Install-Apps.ps1`, before the component store pass, so
+`Cleanup-System.ps1` reclaims whatever the uninstaller left behind.
+
 ### Cloning on the host is usually better
 
 A `git` app needs git installed in the image by an earlier entry, and it stays
@@ -123,7 +170,8 @@ apps = [
 ]
 ```
 
-Use the `git` type when you want the build to follow a branch on purpose.
+Use the `git` type when you want the build to follow a branch on purpose, or
+when the point is to keep the clone off your own machine entirely.
 
 ## What unpacks without installing anything
 

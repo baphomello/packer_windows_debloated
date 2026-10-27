@@ -47,6 +47,7 @@ function New-AppEntry {
         name = ''; type = ''; source = ''; url = ''; dest = ''
         args = @(); marker = ''; shortcut = ''
         extractor = ''; extractor_args = @(); success_exit_codes = @()
+        uninstall = @(); remove_paths = @()
         grant_users = $false; exclude_from_defender = $false
     }
     foreach ($k in $Set.Keys) { $app[$k] = $Set[$k] }
@@ -399,6 +400,48 @@ if ('overlay' -like $Filter) {
     Confirm-That 'it wins in subdirectories too' ((Get-Content (Join-Path $dest 'sub\deep.txt')).Trim() -eq 'custom')
     Confirm-That 'what the overlay does not name survives' ((Get-Content (Join-Path $dest 'keep.txt')).Trim() -eq 'original')
     Confirm-That 'the overlay can add files' (Test-Path (Join-Path $dest 'extra.txt'))
+}
+
+if ('cleanup' -like $Filter) {
+    Start-Case 'cleanup: a build-time tool is uninstalled once everything is in'
+    $disc = New-Disc 'clean'
+    '@exit /b 0' | Set-Content -LiteralPath (Join-Path $disc 'setup.cmd') -Encoding ASCII
+    New-Item -Path (Join-Path $disc 'App') -ItemType Directory -Force | Out-Null
+    'x' | Set-Content (Join-Path $disc 'App\app.exe')
+    $dest = Join-Path $work 'out-clean'
+    # Stands in for an uninstaller: deletes the directory it is handed
+    $toolDir = Join-Path $work 'faketool'
+    New-Item -Path $toolDir -ItemType Directory -Force | Out-Null
+    $uninst = Join-Path $toolDir 'unins000.cmd'
+    @('@echo off', 'rmdir /s /q "%~dp0."') | Set-Content -LiteralPath $uninst -Encoding ASCII
+    $leftover = Join-Path $dest 'scratch'
+
+    $r = Invoke-Install @(
+        (New-AppEntry @{ name = 'Tool'; type = 'exe'; source = 'setup.cmd'; uninstall = @($uninst) }),
+        (New-AppEntry @{ name = 'App'; type = 'copy'; source = 'App'; dest = $dest; remove_paths = @($leftover) })
+    ) $disc
+    Confirm-That 'exits zero' ($r.ExitCode -eq 0)
+    Confirm-That 'the app is installed' (Test-Path (Join-Path $dest 'app.exe'))
+    Confirm-That 'the tool is gone' (-not (Test-Path $uninst))
+    Confirm-That 'counts the cleanup' ($r.Output -match 'cleanup action')
+    Confirm-That 'a remove_path that never existed is not an error' ($r.Output -notmatch 'could not remove')
+}
+
+if ('cleanup-paths' -like $Filter) {
+    Start-Case 'cleanup: remove_paths deletes what the install left behind'
+    $disc = New-Disc 'cpath'
+    New-Item -Path (Join-Path $disc 'App\.git') -ItemType Directory -Force | Out-Null
+    'x' | Set-Content (Join-Path $disc 'App\app.exe')
+    'history' | Set-Content (Join-Path $disc 'App\.git\HEAD')
+    $dest = Join-Path $work 'out-cpath'
+
+    $r = Invoke-Install @(New-AppEntry @{
+            name = 'Cloned'; type = 'copy'; source = 'App'; dest = $dest
+            remove_paths = @((Join-Path $dest '.git'))
+        }) $disc
+    Confirm-That 'exits zero' ($r.ExitCode -eq 0)
+    Confirm-That 'the app survives' (Test-Path (Join-Path $dest 'app.exe'))
+    Confirm-That 'the history is gone' (-not (Test-Path (Join-Path $dest '.git')))
 }
 
 # ------------------------------------------------- Test-ImageState

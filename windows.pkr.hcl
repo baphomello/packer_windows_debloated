@@ -235,16 +235,19 @@ variable "apps" {
     // msi     msiexec /i, args default to /qn /norestart
     // exe     an installer run with args
     // git     git clone, which needs git installed by an earlier app
-    type                  = string
-    source                = optional(string, "")
-    url                   = optional(string, "")
-    dest                  = optional(string, "")
-    args                  = optional(list(string), [])
-    marker                = optional(string, "")
-    shortcut              = optional(string, "")
-    extractor             = optional(string, "")
-    extractor_args        = optional(list(string), [])
-    success_exit_codes    = optional(list(number), [])
+    type               = string
+    source             = optional(string, "")
+    url                = optional(string, "")
+    dest               = optional(string, "")
+    args               = optional(list(string), [])
+    marker             = optional(string, "")
+    shortcut           = optional(string, "")
+    extractor          = optional(string, "")
+    extractor_args     = optional(list(string), [])
+    success_exit_codes = optional(list(number), [])
+    // Build-time only: run once every app is in, in reverse order
+    uninstall             = optional(list(string), [])
+    remove_paths          = optional(list(string), [])
     grant_users           = optional(bool, true)
     exclude_from_defender = optional(bool, true)
   }))
@@ -262,6 +265,10 @@ variable "apps" {
   validation {
     condition     = alltrue([for a in var.apps : contains(["msi", "exe"], a.type) || a.dest != ""])
     error_message = "A copy, archive or git app needs dest: the directory it lands in."
+  }
+  validation {
+    condition     = alltrue([for a in var.apps : length(a.uninstall) != 1 || a.uninstall[0] != ""])
+    error_message = "An app's uninstall is the program to run and then its arguments, so the first entry must be a path."
   }
   validation {
     condition     = alltrue([for a in var.apps : a.extractor != "" || length(a.extractor_args) == 0])

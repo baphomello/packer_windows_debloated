@@ -87,6 +87,15 @@ foreach ($app in $manifest) {
             if (Test-Path -LiteralPath $app.dest) { 'present' } else { 'absent' }
         }.GetNewClosure()
     }
+    # A build-time tool that is still here means its uninstaller reported
+    # success and did nothing, which is exactly what nobody would notice
+    foreach ($gone in (@($app.uninstall | Select-Object -First 1) + @($app.remove_paths))) {
+        if (-not $gone) { continue }
+        Test-State -What "  removed $gone" -Requested $true -Expected 'gone' -Actual {
+            if (Test-Path -LiteralPath ($gone -replace '/', '\')) { 'still there' } else { 'gone' }
+        }.GetNewClosure()
+    }
+
     if ($app.marker) {
         Test-State -What "  marker $($app.marker)" -Requested $true -Expected 'present' -Actual {
             $path = $app.marker

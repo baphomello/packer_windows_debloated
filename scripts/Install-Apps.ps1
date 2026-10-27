@@ -289,6 +289,53 @@ foreach ($app in $apps) {
     $installed++
 }
 
+# A tool that only existed to install something else should not ship in the
+# image. Cleanup runs once every app is in, in reverse order, so an app that
+# needed another one is undone before the thing it needed.
+#
+# It reports and never throws. Whether the removal worked is a question about
+# the finished machine, and Test-ImageState.ps1 asks it there: an uninstaller
+# that silently did nothing would otherwise leave the tool in the image with
+# the build still calling itself a success.
+$cleaned = 0
+for ($i = $apps.Count - 1; $i -ge 0; $i--) {
+    $app = $apps[$i]
+    $label = Get-Field $app 'name'
+
+    $uninstall = @(Get-Field $app 'uninstall')
+    if ($uninstall.Count -gt 0) {
+        $program = $uninstall[0] -replace '/', '\'
+        $rest = @($uninstall | Select-Object -Skip 1)
+        if (-not (Test-Path -LiteralPath $program)) {
+            Write-Output "${label}: nothing to uninstall at $program"
+        } else {
+            try {
+                if ($rest.Count -gt 0) {
+                    $proc = Start-Process -FilePath $program -ArgumentList $rest -Wait -PassThru
+                } else {
+                    $proc = Start-Process -FilePath $program -Wait -PassThru
+                }
+                Write-Output "${label}: uninstalled, exit $($proc.ExitCode)"
+                $cleaned++
+            } catch {
+                Write-Output "${label}: uninstaller failed: $(($_.Exception.Message -replace '\s+', ' ').Trim())"
+            }
+        }
+    }
+
+    foreach ($path in @(Get-Field $app 'remove_paths')) {
+        $target = $path -replace '/', '\'
+        if (-not (Test-Path -LiteralPath $target)) { continue }
+        try {
+            Remove-Item -LiteralPath $target -Recurse -Force -ErrorAction Stop
+            Write-Output "${label}: removed $target"
+            $cleaned++
+        } catch {
+            Write-Output "${label}: could not remove ${target}: $(($_.Exception.Message -replace '\s+', ' ').Trim())"
+        }
+    }
+}
+
 # Everything asked for is installed by now, so failing to tidy the scratch
 # directory is not a reason to fail the build
 try {
@@ -297,6 +344,6 @@ try {
     Write-Output "Scratch directory left behind: $work"
 }
 
-Write-Output "$installed app(s) installed."
+Write-Output "$installed app(s) installed, $cleaned cleanup action(s)."
 
 exit 0
