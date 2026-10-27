@@ -11,7 +11,9 @@
 # image has no git. In both cases this stops and names what is missing rather
 # than choosing a tool on the user's behalf.
 
-$manifest = 'C:\Windows\Temp\apps.json'
+# AppsManifest lets the tests point this somewhere writable without rights
+$manifest = $env:AppsManifest
+if (-not $manifest) { $manifest = 'C:\Windows\Temp\apps.json' }
 if (-not (Test-Path -LiteralPath $manifest)) {
     Write-Output 'No app manifest, nothing to install.'
     exit 0
@@ -36,8 +38,18 @@ function Get-Field {
 }
 
 # Found by volume label, not by letter: the unattend CD is attached too and the
-# letters depend on the order Windows enumerated them
+# letters depend on the order Windows enumerated them.
+#
+# AppsDiscPath overrides the search with a directory. It is what the tests use,
+# since mounting a disc needs rights a test run should not want, and it is also
+# the way in when the sources reach the guest by some other route than a DVD.
 function Get-AppsDisc {
+    if ($env:AppsDiscPath) {
+        if (-not (Test-Path -LiteralPath $env:AppsDiscPath)) {
+            throw "AppsDiscPath is '$($env:AppsDiscPath)', which does not exist."
+        }
+        return (Get-Item -LiteralPath $env:AppsDiscPath).FullName
+    }
     foreach ($drive in [System.IO.DriveInfo]::GetDrives()) {
         if ($drive.DriveType -ne 'CDRom' -or -not $drive.IsReady) { continue }
         if ($drive.VolumeLabel -ne $env:AppsLabel) { continue }
@@ -47,7 +59,7 @@ function Get-AppsDisc {
 }
 
 $disc = Get-AppsDisc
-$work = 'C:\Windows\Temp\apps'
+$work = Join-Path ([System.IO.Path]::GetDirectoryName($manifest)) 'apps-work'
 New-Item -Path $work -ItemType Directory -Force | Out-Null
 
 # Returns a path on local disk, whatever the app named as its origin
@@ -68,8 +80,10 @@ function Resolve-Source {
     if (-not $disc) {
         throw "${Name}: no disc labelled $($env:AppsLabel) is attached, so 'source' cannot be read. Check apps_source_dir and apps_label."
     }
-    # A disc built from one application's folder has that folder as its root
-    if ($source -eq '.') { return $disc.TrimEnd('\') }
+    # A disc built from one application's folder has that folder as its root.
+    # Returned with its trailing separator: "E:" on its own means the current
+    # directory on E:, which is only the root until something changes it.
+    if ($source -eq '.') { return $disc }
     $path = Join-Path $disc $source
     if (-not (Test-Path -LiteralPath $path)) {
         throw "${Name}: '$source' is not on the apps disc at $disc."

@@ -15,3 +15,6 @@ packer_cache/
 # Packer binary, if you keep it next to the template
 packer.exe
 packer.exe.bak-*
+
+# Test workspaces land in TEMP, but a failed run can be told to keep one here
+tests/_work/
