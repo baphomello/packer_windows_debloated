@@ -21,6 +21,7 @@ $ErrorActionPreference = 'Stop'
 
 $root = Split-Path -Parent $PSScriptRoot
 $installApps = Join-Path $root 'scripts\Install-Apps.ps1'
+$testImageState = Join-Path $root 'scripts\Test-ImageState.ps1'
 $fixtures = Join-Path $PSScriptRoot 'fixtures'
 $work = Join-Path $env:TEMP ('packer-tests-' + [guid]::NewGuid().ToString('N').Substring(0, 8))
 
@@ -301,6 +302,50 @@ if ('shortcut' -like $Filter) {
     $r = Invoke-Install @(New-AppEntry @{ name = 'App'; type = 'copy'; source = 'App'; dest = $dest; shortcut = 'ghost.exe' }) $disc
     Confirm-That 'exits zero' ($r.ExitCode -eq 0)
     Confirm-That 'says the target is missing' ($r.Output -match 'does not exist')
+}
+
+# ------------------------------------------------- Test-ImageState
+
+# It reads the same manifest back on the finished machine, so an app that was
+# installed and then lost between provisioners still fails the build
+function Invoke-ImageState {
+    param([array] $Apps, [string] $Tag)
+    $manifest = Join-Path $work "state-$Tag.json"
+    ConvertTo-Json @($Apps) -Depth 6 | Set-Content -LiteralPath $manifest -Encoding UTF8
+    $env:AppsManifest = $manifest
+    $prev = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        $out = & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $testImageState 2>&1
+        return [pscustomobject]@{ ExitCode = $LASTEXITCODE; Output = ($out | Out-String) }
+    } finally {
+        $ErrorActionPreference = $prev
+        Remove-Item Env:\AppsManifest -ErrorAction SilentlyContinue
+    }
+}
+
+# The machine running the tests is not a built image, so unrelated assertions
+# in this script fail here by design - auto-logon, for one. These cases look at
+# the app lines and at whether the app is among the failures, never at the exit
+# code, which belongs to the whole image.
+if ('state-present' -like $Filter) {
+    Start-Case 'image state: an app that is on disk is reported present'
+    $dest = Join-Path $work 'state-ok'
+    New-Item -Path $dest -ItemType Directory -Force | Out-Null
+    'x' | Set-Content (Join-Path $dest 'app.exe')
+
+    $r = Invoke-ImageState @(New-AppEntry @{ name = 'Present'; type = 'copy'; dest = $dest; marker = 'app.exe' }) 'present'
+    Confirm-That 'reports the app present' ($r.Output -match 'App Present\s+present')
+    Confirm-That 'reports the marker present' ($r.Output -match 'marker app\.exe\s+present')
+    Confirm-That 'the app is not among the failures' ($r.Output -notmatch '- App Present')
+}
+
+if ('state-absent' -like $Filter) {
+    Start-Case 'image state: an app that vanished fails the build'
+    $r = Invoke-ImageState @(New-AppEntry @{ name = 'Gone'; type = 'copy'; dest = (Join-Path $work 'never-made'); marker = 'x.exe' }) 'absent'
+    Confirm-That 'exits non-zero' ($r.ExitCode -ne 0)
+    Confirm-That 'reports it absent' ($r.Output -match 'App Gone\s+absent')
+    Confirm-That 'lists it among the failures' ($r.Output -match '- App Gone')
 }
 
 # -------------------------------------------------------------- report

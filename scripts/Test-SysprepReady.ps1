@@ -23,7 +23,10 @@ foreach ($needed in @('C:\Windows\System32\Sysprep\sysprep.exe', 'C:\Windows\Pan
 # The refusal that actually cost a build: 24H2 encrypts the OS volume by
 # itself, and sysprep will not generalize one. Disable-DriveEncryption.ps1 runs
 # before this and should already have dealt with it.
-$blv = Get-BitLockerVolume -MountPoint $env:SystemDrive -ErrorAction SilentlyContinue
+$blv = $null
+if (Get-Command 'Get-BitLockerVolume' -ErrorAction SilentlyContinue) {
+    $blv = Get-BitLockerVolume -MountPoint $env:SystemDrive -ErrorAction SilentlyContinue
+}
 if ($blv -and $blv.VolumeStatus -ne 'FullyDecrypted') {
     Write-Output "BLOCKER: $($env:SystemDrive) is $($blv.VolumeStatus) - sysprep refuses an encrypted OS volume (0x80310039)"
 } else {

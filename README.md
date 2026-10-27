@@ -361,6 +361,9 @@ scripts/                     provisioners, in build order
   Disable-DriveEncryption.ps1  sysprep refuses an encrypted OS volume
   Test-SysprepReady.ps1        lists what is likely to stop sysprep, before it runs
   Optimize-Vhdx.ps1            host-side VHDX compaction (post-processor)
+tests/                       runs the provisioning scripts without a build
+  Invoke-Tests.ps1             17 cases, seconds, no elevation
+  fixtures/                    archives the tests cannot create with built-in tools
 tools/                       its *.ps1 are copied to C:\Tools in the image
   Get-ImageSummary.ps1         what the build actually produced
   host/                        runs on the host, so it stays out of that copy
@@ -376,13 +379,29 @@ docs/
 ## Development
 
 ```powershell
+.\tests\Invoke-Tests.ps1              # seconds, no Hyper-V, no elevation
 packer fmt .
 packer validate -syntax-only windows.pkr.hcl
 Invoke-ScriptAnalyzer -Path . -Recurse -Settings ./.psscriptanalyzer.psd1
 ```
 
-CI runs all three on every push. The PowerShell settings pin
+CI runs these on every push. The PowerShell settings pin
 `PSUseCompatibleSyntax` to 5.1, because that is what the guest runs.
+
+`Invoke-Tests.ps1` runs the real provisioning scripts in a child process
+against a manifest shaped the way `jsonencode` writes it, then reads the file
+system rather than the script's own account of itself. It covers every app
+type, the archive formats, the failure paths and the ordering. A build takes
+hours and needs Hyper-V, elevation and an ISO; most of what goes wrong in one
+is ordinary script logic, and this finds that in seconds. `-Filter` narrows it:
+
+```powershell
+.\tests\Invoke-Tests.ps1 -Filter encrypted*
+```
+
+What it cannot reach: anything needing a real disc, an installed MSI, or
+elevation. The guest-only scripts are checked by the build itself, through
+`Test-ImageState.ps1`.
 
 ## Licence
 

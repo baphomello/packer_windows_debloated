@@ -75,7 +75,8 @@ Test-State -What 'Pagefile entry' -Requested ($pagefileMb -gt 0) -Expected "C:\p
 
 # Read back from the same manifest Install-Apps.ps1 worked from, so the build
 # ends by checking the machine rather than trusting the script that wrote it
-$manifestPath = 'C:\Windows\Temp\apps.json'
+$manifestPath = $env:AppsManifest
+if (-not $manifestPath) { $manifestPath = 'C:\Windows\Temp\apps.json' }
 $manifest = @()
 if (Test-Path -LiteralPath $manifestPath) {
     $manifest = @((Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json) | ForEach-Object { $_ })

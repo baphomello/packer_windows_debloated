@@ -17,6 +17,15 @@ $key = 'HKLM:\SYSTEM\CurrentControlSet\Control\BitLocker'
 if (-not (Test-Path -LiteralPath $key)) { New-Item -Path $key -Force | Out-Null }
 New-ItemProperty -LiteralPath $key -Name 'PreventDeviceEncryption' -Value 1 -PropertyType DWord -Force | Out-Null
 
+# Windows Home ships no BitLocker module, and -ErrorAction does not suppress a
+# command that does not resolve at all, so the guard has to come first. Not
+# being able to look is not a reason to fail a build: the answer file is what
+# stops the encryption, and this is the net under it.
+if (-not (Get-Command 'Get-BitLockerVolume' -ErrorAction SilentlyContinue)) {
+    Write-Output 'No BitLocker cmdlets on this edition; relying on the answer file to have prevented encryption.'
+    exit 0
+}
+
 $volume = Get-BitLockerVolume -MountPoint $mount -ErrorAction SilentlyContinue
 if (-not $volume) {
     Write-Output "No BitLocker status for ${mount}; nothing to decrypt."
