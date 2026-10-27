@@ -345,25 +345,50 @@ whole answer file: no account is created, WinRM never opens, and the build sits
 on the connect timeout. `Build-Image.ps1` refuses such a name before it creates
 anything, so set `computer_name` separately when the VM deserves a longer name.
 
-Cloning the built VHDX:
+### Is the image a template?
+
+Not in the sense VMM means. A **VM Template** is a VMM library object - a
+generalized disk plus a hardware profile plus an OS profile, deployed as one
+thing. Hyper-V on its own has no such object, and no amount of scripting
+invents one.
+
+What it has instead, and what this build produces, is the half that matters:
+with `generalize = true` sysprep has already run, so the VHDX is a reusable
+base. Every VM made from a copy boots through OOBE once and takes its own SID,
+hostname and machine GUID. The deployment step is the part you write:
 
 ```powershell
-$src = 'D:\hyperv\packer\WINMIN\Virtual Hard Disks\WINMIN.vhdx'
-1..3 | ForEach-Object {
-    $name = "WIN$_"
-    $disk = "D:\hyperv\$name\$name.vhdx"
-    New-Item -ItemType Directory -Path (Split-Path $disk) -Force | Out-Null
-    Copy-Item $src $disk
-    New-VM -Name $name -Generation 2 -MemoryStartupBytes 4GB -VHDPath $disk -SwitchName 'Default Switch'
-    Set-VM -Name $name -ProcessorCount 2 -DynamicMemory -MemoryMinimumBytes 2GB -MemoryMaximumBytes 6GB
-    Set-VMFirmware -VMName $name -EnableSecureBoot On
-    Enable-VMTPM -VMName $name
-}
+.\tools\host\New-VMFromImage.ps1 `
+    -ImagePath 'C:\HyperV\packer\WINMIN\Virtual Hard Disks\WINMIN.vhdx' `
+    -Name WIN1,WIN2,WIN3 -Differencing
 ```
 
-Use a differencing disk (`New-VHD -Differencing -ParentPath $src`) to save
-space. Every clone passes through OOBE once, gets its own SID, hostname and
-machine GUID from sysprep, and lands on the same auto-logon desktop.
+`-WhatIf` shows what it would do and touches nothing.
+
+| How | Costs | Closest to |
+| --- | --- | --- |
+| `-Differencing` | megabytes per VM; one read-only parent holds the rest | a VMM template |
+| full copy (the default) | the whole VHDX per VM | an exported VM |
+| `Export-VM` / `Import-VM` | a whole copy, through the Hyper-V UI | what people usually mean by "template" in Hyper-V Manager |
+
+Differencing makes the parent read-only and keeps it that way. Rebuilding over
+a parent that children still point at breaks every one of them.
+
+**If you do have VMM**, the direct path is open: put this VHDX in the VMM
+library and build a VM Template on it. Generalization is the prerequisite and
+it is already done.
+
+### What the clones do not inherit
+
+Sysprep hands out a random hostname, because the answer file asks for one with
+`<ComputerName>*</ComputerName>`. The VM name and the guest hostname are
+separate things, so rename inside the guest if they have to match.
+
+Secure Boot and the vTPM are off unless asked for, which is what lets the same
+image build on hypervisors that have neither. `-SecureBoot` and `-Tpm` turn
+them on per VM. The vTPM needs a key protector set first, and
+`Enable-VMTPM` on its own fails with a message that does not say so - the tool
+does both.
 
 ## Decisions worth knowing
 
@@ -426,6 +451,7 @@ tools/                       its *.ps1 are copied to C:\Tools in the image
   Get-ImageSummary.ps1         what the build actually produced
   host/                        runs on the host, so it stays out of that copy
     Get-SysprepFailure.ps1     reads a kept VM over PowerShell Direct
+    New-VMFromImage.ps1        creates Hyper-V VMs from the built image
 profiles/
   README.md                    how to write one
   ragnarok-openkore/           worked example: app + tools + networking
