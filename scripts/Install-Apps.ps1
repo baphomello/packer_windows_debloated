@@ -68,8 +68,14 @@ function Resolve-Source {
 
     $url = Get-Field $App 'url'
     if ($url) {
-        $file = Join-Path $work ([System.IO.Path]::GetFileName($url.Split('?')[0]))
-        if (Test-Path -LiteralPath $file) { return $file }
+        # A download link need not end in a file name - the Microsoft fwlink
+        # redirectors do not. An empty name would make Join-Path hand back the
+        # work directory itself, which exists, so the download would be skipped
+        # and a directory returned as the source.
+        $leaf = [System.IO.Path]::GetFileName($url.Split('?')[0])
+        if (-not $leaf) { $leaf = ($Name -replace '[^\w.-]', '_') + '.download' }
+        $file = Join-Path $work $leaf
+        if (Test-Path -LiteralPath $file -PathType Leaf) { return $file }
         & curl.exe --location --silent --show-error --fail --retry 3 --output $file $url
         if ($LASTEXITCODE -ne 0) { throw "${Name}: download failed from $url" }
         return $file

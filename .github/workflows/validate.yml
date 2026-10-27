@@ -11,12 +11,14 @@ jobs:
       - uses: actions/checkout@v4
       - uses: hashicorp/setup-packer@v3
         with:
-          version: 1.11.2
+          # The template needs optional() inside an object type constraint,
+          # which no release before 1.16.0 accepts.
+          version: 1.16.2
       - name: packer fmt
         run: packer fmt -check -diff .
       - name: packer validate
         # Syntax only: a full validate needs the Hyper-V plugin, the Windows ISO
-        # and the client folder, none of which exist on a runner.
+        # and the app sources, none of which exist on a runner.
         run: packer validate -syntax-only windows.pkr.hcl
 
   powershell:
@@ -30,3 +32,23 @@ jobs:
           $found = Invoke-ScriptAnalyzer -Path . -Recurse -Settings ./.psscriptanalyzer.psd1
           $found | Format-Table -AutoSize
           if ($found) { throw "$($found.Count) finding(s)" }
+
+  tests:
+    # Windows PowerShell 5.1, which is what the guest runs, and the tar.exe and
+    # robocopy the scripts lean on. Neither exists on a Linux runner.
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Parse every script under Windows PowerShell 5.1
+        shell: powershell
+        run: |
+          $bad = 0
+          foreach ($f in Get-ChildItem -Recurse -Include *.ps1,*.pkrtpl.ps1 -File) {
+            $t = $null; $e = $null
+            [System.Management.Automation.Language.Parser]::ParseFile($f.FullName, [ref]$t, [ref]$e) | Out-Null
+            if ($e.Count) { $bad++; Write-Host "$($f.Name):$($e[0].Extent.StartLineNumber) $($e[0].Message)" }
+          }
+          if ($bad) { throw "$bad script(s) do not parse" }
+      - name: Provisioning script tests
+        shell: powershell
+        run: .\tests\Invoke-Tests.ps1

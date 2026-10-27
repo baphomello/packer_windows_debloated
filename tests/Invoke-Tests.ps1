@@ -304,6 +304,41 @@ if ('shortcut' -like $Filter) {
     Confirm-That 'says the target is missing' ($r.Output -match 'does not exist')
 }
 
+if ('extractor-works' -like $Filter) {
+    Start-Case 'archive: a declared extractor is called with src and dest substituted'
+    $disc = New-Disc 'extw'
+    Copy-Item (Join-Path $fixtures 'encrypted.7z') (Join-Path $disc 'enc.7z')
+    # Stands in for 7z.exe: proves the template is substituted and the result
+    # is taken from the staging directory, without installing anything
+    $stub = Join-Path $work 'stub-extractor.cmd'
+    @(
+        '@echo off'
+        'if not exist "%~2" mkdir "%~2"'
+        'copy /y "%~1" "%~2\extracted.bin" >nul'
+    ) | Set-Content -LiteralPath $stub -Encoding ASCII
+    $dest = Join-Path $work 'out-extw'
+
+    $r = Invoke-Install @(New-AppEntry @{
+            name = 'Secrets'; type = 'archive'; source = 'enc.7z'; dest = $dest
+            extractor = $stub; extractor_args = @('{src}', '{dest}')
+        }) $disc
+    Confirm-That 'exits zero' ($r.ExitCode -eq 0)
+    Confirm-That 'what the extractor wrote reaches the destination' (Test-Path (Join-Path $dest 'extracted.bin'))
+}
+
+if ('url-no-filename' -like $Filter) {
+    Start-Case 'url: a link with no file name in it does not become the work directory'
+    $disc = New-Disc 'urlnf'
+    $dest = Join-Path $work 'out-urlnf'
+
+    $r = Invoke-Install @(New-AppEntry @{
+            name = 'Redirected'; type = 'archive'; url = 'https://example.invalid/fwlink/?id=1'; dest = $dest
+        }) $disc
+    Confirm-That 'exits non-zero' ($r.ExitCode -ne 0)
+    Confirm-That 'fails on the download, not on a directory' ($r.Output -match 'download failed')
+    Confirm-That 'nothing reaches the destination' (-not (Test-Path $dest))
+}
+
 # ------------------------------------------------- Test-ImageState
 
 # It reads the same manifest back on the finished machine, so an app that was
