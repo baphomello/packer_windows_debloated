@@ -215,20 +215,15 @@ variable "admin_password" {
 
 // ------------------------------------------------------------------- Apps
 
-variable "apps_source_dir" {
-  type        = string
-  description = "Folder on the host packed into an ISO and attached as a second DVD. Every app with a \"source\" reads it from there, so nothing has to be downloaded during the build"
-  default     = ""
+variable "app_sources" {
+  type        = list(string)
+  description = "Directories on this machine to put on the install CD, each landing at its root under its own name. An app's source is then a path inside one of them"
+  default     = []
 }
-variable "apps_iso" {
+variable "cd_label" {
   type        = string
-  description = "ISO built from apps_source_dir. Empty derives \"<apps_source_dir>.iso\""
-  default     = ""
-}
-variable "apps_label" {
-  type        = string
-  description = "Volume label of the apps ISO. The guest finds the disc by this, not by drive letter. The value is arbitrary; changing it means repacking the ISO"
-  default     = "PAYLOAD"
+  description = "Volume label of that CD. The guest finds it by this, not by drive letter"
+  default     = "unattend"
 }
 variable "apps" {
   // Installed in the order written. That order is the only dependency
@@ -377,13 +372,6 @@ locals {
 
   computer_name = var.computer_name != "" ? var.computer_name : var.vm_name
 
-  // One variable moves the whole disc: apps_iso follows apps_source_dir unless
-  // it is set explicitly
-  apps_iso = var.apps_iso != "" ? var.apps_iso : "${var.apps_source_dir}.iso"
-
-  // Only apps that read from the disc need it attached
-  needs_apps_disc = length([for a in var.apps : a if a.source != ""]) > 0
-
   tools_files = flatten([for dir in var.tools_dirs : [for f in fileset("${path.root}/${dir}", "*.ps1") : "${path.root}/${dir}/${f}"]])
 
   // Both branches live in the script rather than here: it has to report why
@@ -431,10 +419,6 @@ source "hyperv-iso" "windows" {
   iso_url      = var.iso_url
   iso_checksum = var.iso_checksum
 
-  // App sources ride in as a second DVD, so nothing has to be served over the
-  // network during the build. Each target spells this its own way.
-  secondary_iso_images = local.needs_apps_disc ? [local.apps_iso] : []
-
   communicator   = "winrm"
   winrm_username = var.admin_username
   winrm_password = var.admin_password
@@ -446,7 +430,8 @@ source "hyperv-iso" "windows" {
   shutdown_command = local.shutdown_command
   shutdown_timeout = var.shutdown_timeout
 
-  cd_label   = "unattend"
+  cd_label   = var.cd_label
+  cd_files   = var.app_sources
   cd_content = local.unattend_content
 }
 
@@ -473,9 +458,6 @@ source "qemu" "windows" {
   iso_url      = var.iso_url
   iso_checksum = var.iso_checksum
 
-  // No secondary_iso_images here, so the disc goes on the command line
-  qemuargs = local.needs_apps_disc ? [["-drive", "file=${local.apps_iso},media=cdrom,index=3"]] : []
-
   communicator   = "winrm"
   winrm_username = var.admin_username
   winrm_password = var.admin_password
@@ -487,7 +469,8 @@ source "qemu" "windows" {
   shutdown_command = local.shutdown_command
   shutdown_timeout = var.shutdown_timeout
 
-  cd_label   = "unattend"
+  cd_label   = var.cd_label
+  cd_files   = var.app_sources
   cd_content = local.unattend_content
 }
 
@@ -511,12 +494,6 @@ source "virtualbox-iso" "windows" {
   iso_url      = var.iso_url
   iso_checksum = var.iso_checksum
 
-  // Port 2 on the controller the plugin creates for the install media
-  vboxmanage = local.needs_apps_disc ? [
-    ["storageattach", "{{ .Name }}", "--storagectl", "SATA Controller",
-    "--port", "2", "--device", "0", "--type", "dvddrive", "--medium", local.apps_iso]
-  ] : []
-
   communicator   = "winrm"
   winrm_username = var.admin_username
   winrm_password = var.admin_password
@@ -528,7 +505,8 @@ source "virtualbox-iso" "windows" {
   shutdown_command = local.shutdown_command
   shutdown_timeout = var.shutdown_timeout
 
-  cd_label   = "unattend"
+  cd_label   = var.cd_label
+  cd_files   = var.app_sources
   cd_content = local.unattend_content
 }
 
@@ -552,14 +530,7 @@ source "vmware-iso" "windows" {
   iso_url      = var.iso_url
   iso_checksum = var.iso_checksum
 
-  vmx_data = merge(
-    { "firmware" = "efi" },
-    local.needs_apps_disc ? {
-      "sata0:1.present"    = "TRUE"
-      "sata0:1.deviceType" = "cdrom-image"
-      "sata0:1.fileName"   = local.apps_iso
-    } : {}
-  )
+  vmx_data = { "firmware" = "efi" }
 
   communicator   = "winrm"
   winrm_username = var.admin_username
@@ -572,7 +543,8 @@ source "vmware-iso" "windows" {
   shutdown_command = local.shutdown_command
   shutdown_timeout = var.shutdown_timeout
 
-  cd_label   = "unattend"
+  cd_label   = var.cd_label
+  cd_files   = var.app_sources
   cd_content = local.unattend_content
 }
 
@@ -681,7 +653,7 @@ build {
     elevated_user            = var.admin_username
     elevated_password        = var.admin_password
     elevated_execute_command = local.strict_powershell
-    environment_vars         = ["AppsLabel=${var.apps_label}"]
+    environment_vars         = ["AppsLabel=${var.cd_label}"]
     scripts                  = concat(["${path.root}/scripts/Install-Apps.ps1"], [for s in var.extra_scripts : "${path.root}/${s}"])
   }
 

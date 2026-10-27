@@ -27,26 +27,27 @@ admin_password = "change-me"
 
 // ---- apps --------------------------------------------------------------
 
-// The folder packed into an ISO and attached to the build VM as a second DVD.
-// Every app with a "source" reads from that disc, so the build needs no
-// network. Leave empty if every app installs from a url.
-apps_source_dir = "D:/apps"
-
-// Optional: where that ISO is written. Empty derives "<apps_source_dir>.iso".
-apps_iso = ""
+// Directories on this machine. Packer copies each onto the install CD under
+// its own name, so there is no ISO to build beforehand and no extra step on
+// any hypervisor. Name as many as the VM should carry.
+app_sources = [
+  "D:/apps/MyApp",
+  "D:/tools/OpenKore",
+]
 
 // What to install, in order. The order is the only dependency mechanism:
 // an app that needs a tool puts that tool above it.
 //
-//   type = "copy"     a folder from the disc, copied as-is
+//   type = "copy"     a folder from the CD, copied as-is
 //   type = "archive"  zip, 7z, tar.gz, tar.xz - unpacked by the tar.exe
 //                     Windows already ships, so no extractor is installed
 //   type = "msi"      msiexec /i, args default to /qn /norestart
 //   type = "exe"      an installer run with args
 //   type = "git"      git clone, which needs git installed by an earlier app
 //
-// source is a path on the disc, "." meaning the whole disc. url is fetched
-// during the build instead. See docs/apps.md for every field.
+// source is a path on the CD: the directory name from app_sources, optionally
+// with a path under it. url fetches during the build instead, which gives up
+// the offline build. See docs/apps.md for every field.
 apps = [
   {
     name     = "MyApp"
@@ -56,18 +57,16 @@ apps = [
     marker   = "MyApp.exe" // fails the build if missing after the install
     shortcut = "MyApp.exe" // onto the public desktop
   },
+  {
+    name   = "OpenKore"
+    type   = "copy"
+    source = "OpenKore"
+    dest   = "C:/OpenKore"
+  },
   // {
   //   name = "7-Zip"
   //   type = "msi"
-  //   source = "7z2408-x64.msi"
-  // },
-  // {
-  //   name      = "Secrets"
-  //   type      = "archive"
-  //   source    = "secrets.7z"
-  //   dest      = "C:/Program Files/Secrets"
-  //   extractor = "C:/Program Files/7-Zip/7z.exe"   // encrypted: tar.exe cannot
-  //   extractor_args = ["x", "{src}", "-o{dest}", "-pYOURPASSWORD", "-y"]
+  //   source = "MyApp/7z2408-x64.msi"   // a file inside one of the sources
   // },
 ]
 

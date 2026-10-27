@@ -17,16 +17,32 @@ Each app reads from exactly one of:
 
 | Field | Means |
 | --- | --- |
-| `source` | a path on the apps disc, relative to its root. `"."` is the whole disc |
+| `source` | a path on the install CD, relative to its root. `"."` is the whole CD |
 | `url` | fetched with `curl.exe` during the build |
 
-The apps disc is an ISO built from `apps_source_dir` and attached to the build
-VM as a second DVD, so a build whose apps all use `source` touches no network.
-A `url` gives that up, which is sometimes the right trade and never a silent
-one.
+`app_sources` lists directories on the machine running packer, and packer puts
+each one on the install CD under its own name. Nothing is packed beforehand,
+and it is one mechanism on every hypervisor rather than four:
 
-For several apps, make `apps_source_dir` a parent folder holding one
-subdirectory per app, and give each entry that subdirectory as its `source`.
+```hcl
+app_sources = ["D:/Baphokore/Landverse", "/home/mello/openkore"]
+
+apps = [
+  { name = "Client",   type = "copy", source = "Landverse", dest = "C:/Landverse" },
+  { name = "OpenKore", type = "copy", source = "openkore",  dest = "C:/OpenKore" },
+]
+```
+
+The `source` is the last part of the `app_sources` path, because that is the
+name the directory takes on the CD. A path under it works too, which is how an
+installer carried inside one of them is reached: `source = "Landverse/vc.msi"`.
+
+A build whose apps all use `source` touches no network. A `url` gives that up,
+which is sometimes the right trade and never a silent one.
+
+The CD is rebuilt on every build, so a large `app_sources` costs a few minutes
+each time. That is the price of having no separate packing step and no
+per-hypervisor way of attaching a second disc.
 
 ## Types
 

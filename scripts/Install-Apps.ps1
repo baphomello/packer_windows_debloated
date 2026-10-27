@@ -86,9 +86,9 @@ function Resolve-Source {
     if (-not $disc) {
         throw "${Name}: no disc labelled $($env:AppsLabel) is attached, so 'source' cannot be read. Check apps_source_dir and apps_label."
     }
-    # A disc built from one application's folder has that folder as its root.
-    # Returned with its trailing separator: "E:" on its own means the current
-    # directory on E:, which is only the root until something changes it.
+    # The whole CD, for a build carrying exactly one directory. Returned with
+    # its trailing separator: "E:" on its own means the current directory on
+    # E:, which is only the root until something changes it.
     if ($source -eq '.') { return $disc }
     $path = Join-Path $disc $source
     if (-not (Test-Path -LiteralPath $path)) {

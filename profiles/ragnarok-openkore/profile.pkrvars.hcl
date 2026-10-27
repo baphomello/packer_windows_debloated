@@ -4,20 +4,21 @@
 //
 //   .\Build-Image.ps1 -VarFile profiles/ragnarok-openkore/profile.pkrvars.hcl,local.pkrvars.hcl
 //
-// Set apps_source_dir in your local file: it is the client folder on your host.
+// Set app_sources in your local file: the client folder on your host, and
+// whatever else this VM should carry.
 
 // A Ragnarok client is not installed, it is a folder that runs where you put
 // it. Whatever is in that folder travels with it: bridge DLLs, autologin.ini,
 // GordoKore.ini. So one app, of type copy.
 //
-// source = "." is the whole disc, which is what a disc packed from a single
-// folder looks like. Override this list in your own file to change dest, or to
-// install more alongside it.
+// source is the directory name as it lands on the CD, which is the last part
+// of the matching app_sources entry. Override this list in your own file to
+// change dest, or to install more alongside it.
 apps = [
   {
     name     = "Client"
     type     = "copy"
-    source   = "."
+    source   = "Ragnarok"          // the folder named in app_sources
     dest     = "C:/Ragnarok"       // keep in step with tools_config.AppDir
     marker   = "Ragexe.exe"        // keep in step with tools_config.ClientExe
     shortcut = "Launcher.exe"

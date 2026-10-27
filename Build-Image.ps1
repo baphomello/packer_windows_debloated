@@ -4,7 +4,7 @@
     Builds the image with Packer.
 
 .DESCRIPTION
-    Checks the host prerequisites, packs the apps folder into an ISO the
+    Checks the host prerequisites, packs the app sources into an ISO the
     build VM mounts as a second DVD, then runs packer init, validate and build.
 
     The build writes to output_directory and scratches in build_temp_dir, both
@@ -43,7 +43,6 @@ param(
     [string] $PackerPath,
     [ValidateSet('hyperv-iso.windows', 'qemu.windows', 'virtualbox-iso.windows', 'vmware-iso.windows')]
     [string] $Target = 'hyperv-iso.windows',
-    [switch] $SkipAppsIso,
     [switch] $SkipSpaceCheck,
     [switch] $ValidateOnly
 )
@@ -146,7 +145,8 @@ if ($freeMb -lt ($vmMemoryMb + 512)) {
 }
 Write-Host ("Free memory: {0:N1} GB, VM wants {1:N1} GB" -f ($freeMb / 1024), ($vmMemoryMb / 1024)) -ForegroundColor Cyan
 
-# Packer builds the unattend CD with oscdimg, and so does this script
+# On Windows packer builds the install CD with oscdimg; on Linux it uses
+# xorriso, which is why only this check is Windows-shaped
 if (-not (Get-Command 'oscdimg.exe' -ErrorAction SilentlyContinue)) {
     throw 'oscdimg.exe is not in PATH. Install the Windows ADK (Deployment Tools) and add it, or copy oscdimg.exe into C:\Windows\System32.'
 }
@@ -199,98 +199,42 @@ if ($buildTempDir) {
     Write-Host "Build scratch: $buildTempDir" -ForegroundColor Cyan
 }
 
-# ISO9660 puts the primary volume descriptor at sector 16, and the volume
-# identifier 40 bytes into it. Reading it beats mounting the image, which would
-# need rights this script should not spend on a label check.
-function Get-IsoLabel {
-    param([string] $Path)
-    try {
-        $stream = [System.IO.File]::OpenRead($Path)
-    } catch {
-        return $null
-    }
-    try {
-        $null = $stream.Seek(32808, [System.IO.SeekOrigin]::Begin)
-        $buffer = New-Object byte[] 32
-        if ($stream.Read($buffer, 0, 32) -ne 32) { return $null }
-        return [System.Text.Encoding]::ASCII.GetString($buffer).Trim()
-    } finally {
-        $stream.Dispose()
+# --- app sources --------------------------------------------------------
+
+# packer builds the install CD itself from app_sources, so nothing is packed
+# here. This only reports what will go on it, and fails early on a path that
+# is not there rather than after the VM exists.
+$appSources = @()
+foreach ($m in [regex]::Matches($vars, '(?s)^\s*app_sources\s*=\s*\[(.*?)\]', 'Multiline')) {
+    foreach ($q in [regex]::Matches($m.Groups[1].Value, '"([^"]+)"')) {
+        $appSources += $q.Groups[1].Value
     }
 }
 
-# --- apps ISO -----------------------------------------------------------
-
-# Built whenever any app reads from the disc. An apps list that only installs
-# from urls needs no disc at all.
-$appsSourceDir = ConvertTo-WindowsPath (Get-PackerVar 'apps_source_dir')
-
-if ($appsSourceDir -and -not $SkipAppsIso) {
-    if (-not (Test-Path -LiteralPath $appsSourceDir)) {
-        throw "apps_source_dir is '$appsSourceDir', which does not exist."
+$appsGb = 0
+foreach ($src in $appSources) {
+    $path = ConvertTo-WindowsPath $src
+    if (-not (Test-Path -LiteralPath $path)) {
+        throw "app_sources lists '$path', which does not exist."
     }
-
-    # Mirrors the defaults in windows.pkr.hcl
-    $appsIso = Get-PackerVar 'apps_iso'
-    if (-not $appsIso) { $appsIso = "$(Get-PackerVar 'apps_source_dir').iso" }
-    $appsIso = ConvertTo-WindowsPath $appsIso
-    $label = Get-PackerVar 'apps_label' 'PAYLOAD'
-
-    $appFiles = @(Get-ChildItem -LiteralPath $appsSourceDir -File -Recurse -ErrorAction SilentlyContinue)
-    if ($appFiles.Count -eq 0) {
-        throw "No files in $appsSourceDir. Point apps_source_dir at the folder the apps are packed from."
-    }
-
-    $newest = ($appFiles | Sort-Object LastWriteTime -Descending | Select-Object -First 1).LastWriteTime
-    $isoFile = Get-Item -LiteralPath $appsIso -ErrorAction SilentlyContinue
-
-    # The guest finds the disc by label, so a cached ISO carrying the old one is
-    # a build that gets all the way to the apps step before failing to find it
-    $staleLabel = $false
-    if ($isoFile) {
-        $onDisc = Get-IsoLabel $isoFile.FullName
-        if ($onDisc -and $onDisc -ne $label) {
-            Write-Host ("Apps ISO is labelled '{0}' but apps_label is '{1}'; repacking." -f $onDisc, $label) -ForegroundColor Yellow
-            $staleLabel = $true
-        }
-    }
-
-    if (-not $isoFile -or $isoFile.LastWriteTime -lt $newest -or $staleLabel) {
-        # oscdimg will not create the target directory for you
-        $isoParent = Split-Path -LiteralPath $appsIso -Parent
-        if ($isoParent -and -not (Test-Path -LiteralPath $isoParent)) {
-            New-Item -ItemType Directory -Path $isoParent -Force | Out-Null
-        }
-
-        $size = ($appFiles | Measure-Object Length -Sum).Sum / 1GB
-        Write-Host ("Packing {0} ({1:N2} GB) into {2}" -f $appsSourceDir, $size, $appsIso) -ForegroundColor Cyan
-        & oscdimg.exe -u2 -udfver102 "-l$label" $appsSourceDir $appsIso
-        if ($LASTEXITCODE -ne 0) {
-            throw "oscdimg failed with exit code $LASTEXITCODE"
-        }
-        $isoFile = Get-Item -LiteralPath $appsIso
-    }
-
-    Write-Host ("Apps ISO: {0} ({1:N2} GB, label {2})" -f $isoFile.FullName, ($isoFile.Length / 1GB), $label) -ForegroundColor Cyan
+    $size = (Get-ChildItem -LiteralPath $path -Recurse -File -ErrorAction SilentlyContinue |
+        Measure-Object Length -Sum).Sum
+    $appsGb += $size / 1GB
+    Write-Host ("App source: {0} ({1:N2} GB)" -f $path, ($size / 1GB)) -ForegroundColor Cyan
 }
 
 # --- free space ---------------------------------------------------------
 
 # The VHDX grows to the installed image plus the apps, and an export is a
-# second full copy of it. Checked here, after the apps ISO exists, so its
-# real size is known instead of guessed.
+# second full copy of it, and the CD packer builds is another.
 if (-not $SkipSpaceCheck) {
     $outputRoot = [System.IO.Path]::GetPathRoot((ConvertTo-WindowsPath $outputDirectory))
     $disk = Get-CimInstance -ClassName Win32_LogicalDisk -Filter "DeviceID='$($outputRoot.TrimEnd('\'))'" -ErrorAction SilentlyContinue
     if (-not $disk) {
         Write-Warning "Could not read free space on $outputRoot, skipping the check."
     } else {
-        $appsGb = 0
-        if ($appsSourceDir) {
-            $iso = Get-Item -LiteralPath (ConvertTo-WindowsPath (Get-PackerVar 'apps_iso')) -ErrorAction SilentlyContinue
-            if ($iso) { $appsGb = $iso.Length / 1GB }
-        }
-        $neededGb = [math]::Round(20 + $appsGb, 1)
+        # Twice: packer writes the CD under build_temp_dir before the VM reads it
+        $neededGb = [math]::Round(20 + ($appsGb * 2), 1)
         if ((Get-PackerVar 'skip_export' 'false') -ne 'true') { $neededGb = $neededGb * 2 }
         $freeGb = [math]::Round($disk.FreeSpace / 1GB, 1)
 

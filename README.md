@@ -52,7 +52,7 @@ been compacted. The final size is printed by the post-processor.
 | --- | --- | --- |
 | `output_directory` | `C:/HyperV/packer` | the build VM, its VHDX and the export |
 | `build_temp_dir` | user `TEMP` | the unattend ISO and the downloaded-ISO cache |
-| `apps_iso` | `<apps_source_dir>.iso` | the apps disc |
+| `build_temp_dir` | user `TEMP` | where packer writes the install CD before the VM reads it |
 
 All three are independent, so a cramped C: is one variable away from a roomier
 drive and back. `skip_export = true` halves the peak disk use by keeping only
@@ -110,7 +110,7 @@ not, and all three are Hyper-V or Windows:
 
 | | |
 | --- | --- |
-| `Build-Image.ps1` | packs the apps ISO with `oscdimg`, checks free space. `packer build` works without it |
+| `Build-Image.ps1` | checks the host and the paths before packer starts. `packer build` works without it |
 | `Optimize-Vhdx.ps1` | compacts a VHDX; the post-processor is scoped to the Hyper-V target |
 | `tools/host/Get-SysprepFailure.ps1` | PowerShell Direct, which only Hyper-V has |
 
@@ -267,16 +267,21 @@ apps = [
 ]
 ```
 
-Sources ride in on a second DVD, built from one folder on the host:
+Sources are directories on your machine. Packer puts each one on the install
+CD under its own name - no ISO to build first, and the same mechanism on every
+hypervisor:
+
+```hcl
+app_sources = ["D:/Baphokore/Landverse", "D:/tools/OpenKore"]
+```
 
 ```
-apps_source_dir  --oscdimg-->  apps_iso  --second DVD-->  each app's dest
+app_sources  --packer-->  install CD  -->  each app's dest
 ```
 
 So a build whose apps all use `source` serves nothing over HTTP or SMB and
 downloads nothing. An app can use `url` instead, which gives that up
-deliberately. The ISO is a cache, rebuilt only when something in the folder is
-newer, and the guest finds the disc by **volume label**, not drive letter.
+deliberately. The guest finds the CD by **volume label**, not drive letter.
 
 `.zip`, `.7z`, `.tar.gz` and `.tar.xz` unpack with the `tar.exe` Windows already
 ships, so no extractor is installed for them. An **encrypted** archive stops the
