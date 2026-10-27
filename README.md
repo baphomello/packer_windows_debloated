@@ -96,6 +96,38 @@ are skipped instead of downloaded again, a registry hive left mounted by an
 interrupted run is unloaded before it is loaded, and the shutdown detects an
 image that is already generalized instead of running sysprep on it twice.
 
+### A successful retry still ends as a failed build
+
+The prompt means its own warning literally:
+
+```
+[r] retry step (build may fail even if retry succeeds)
+```
+
+A step that fails records the error in Packer's state bag, and a retry that
+succeeds does not clear it. So the step really does run again and really does
+work - the VM shuts down, the disks are compacted, the artifacts are collated -
+and then the build ends on the error from the first attempt, runs the cleanup
+provisioner and unregisters the VM.
+
+What survives that is the point: the **output directory is kept**. A build that
+fails before the artifact exists prints `Deleting output directory...`, and one
+that fails after it exists does not. So check the disk before believing
+`no artifacts were created`:
+
+```powershell
+Get-ChildItem 'C:\HyperV\packer\your-vm-name' -Recurse -File |
+    Select-Object FullName, @{n='GB';e={[math]::Round($_.Length/1GB,2)}}
+```
+
+The image is there, but the `Optimize-Vhdx.ps1` post-processor is not:
+post-processors never run on a failed build, so the VHDX keeps every block the
+build ever touched. Compact it by hand, with the file detached from any VM:
+
+```powershell
+Optimize-VHD -Path 'C:\HyperV\packer\your-vm-name\Virtual Hard Disks\your-vm-name.vhdx' -Mode Full
+```
+
 ### "Timeout while waiting for machine to shut down"
 
 This almost always means sysprep refused to generalize, and it is the one
